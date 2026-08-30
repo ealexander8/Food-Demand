@@ -77,23 +77,28 @@ if selected_country:
             col1, col2, col3, col4 = st.columns(4)
             col1.metric(f"Pop. Growth ({pop_year})", f"{pop_growth:.2f}%")
             col2.metric(f"GDP/Capita Growth ({gdp_year})", f"{gdp_growth:.2f}%")
-            col3.metric("Income Elasticity", f"{income_elasticity:.3f}")
-            col4.metric("Total Demand Growth", f"{total_food_demand_growth:.2f}%")
+            col3.metric("Income Elasticity of Food Demand", f"{income_elasticity:.3f}")
+            col4.metric("% Change in Food Demand", f"{total_food_demand_growth:.2f}%")
             
             st.markdown("---")
             
             # FORMULA & PLUGGED-IN VARIABLE BREAKDOWN
             st.subheader("📐 Formula & Calculation")
             
-            # Formatted LaTeX general formula
-            st.latex(r"\text{Food Demand Growth (\%)} = \text{Pop Growth (\%)} + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)")
+            # Multi-line LaTeX formula to eliminate horizontal scrollbars
+            st.latex(r"""
+            \begin{aligned}
+            \text{\% Change in Food Demand} &= \text{Pop Growth (\%)} \\
+            &\quad + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)
+            \end{aligned}
+            """)
             
-            # Plugged-in equation box showing step-by-step evaluation
+            # Vertically formatted calculation steps to ensure clean fit on all screen sizes
             st.info(
                 f"**Calculation for {selected_country}:**\n\n"
-                f"$$\\text{{Step 1: Plug in values}} \\implies \\mathbf{{{pop_growth:.2f}\\%}} + \\left(\\mathbf{{{gdp_growth:.2f}\\%}} \\times \\mathbf{{{income_elasticity:.3f}}}\\right)$$\n\n"
-                f"$$\\text{{Step 2: Multiply income terms}} \\implies \\mathbf{{{pop_growth:.2f}\\%}} + \\mathbf{{{income_contrib:.2f}\\%}}$$\n\n"
-                f"$$\\text{{Final Result}} \\implies \\mathbf{{{total_food_demand_growth:.2f}\\%}}$$"
+                f"• **Step 1 (Plug in values):** `{pop_growth:.2f}% + ({gdp_growth:.2f}% × {income_elasticity:.3f})`\n\n"
+                f"• **Step 2 (Multiply income terms):** `{pop_growth:.2f}% + {income_contrib:.2f}%`\n\n"
+                f"• **Final Result:** **`{total_food_demand_growth:.2f}%`**"
             )
             
             # 5. PIE CHART VISUALIZATION
