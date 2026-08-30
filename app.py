@@ -85,11 +85,11 @@ if selected_country:
             # FORMULA & PLUGGED-IN VARIABLE BREAKDOWN
             st.subheader("📐 Formula & Calculation")
             
-            # Multi-line LaTeX formula with line break immediately after the equals sign
+            # Multi-line LaTeX formula left-aligned across both lines
             st.latex(r"""
             \begin{aligned}
-            \text{\% Change in Food Demand} &= \\
-            &\quad \text{Pop Growth (\%)} + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)
+            &\text{\% Change in Food Demand} = \\
+            &\text{Pop Growth (\%)} + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)
             \end{aligned}
             """)
             
