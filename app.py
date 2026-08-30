@@ -1,90 +1,90 @@
 import streamlit as st
+import pandas as pd
 import requests
+import difflib
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Real-World Country Data", page_icon="🌍")
+st.title("🌍 Agricultural Economics: Food Demand Simulator")
 
-# Dictionary of countries and their official World Bank ISO-3 codes
-COUNTRIES = {
-    "United States": "USA",
-    "China": "CHN",
-    "Brazil": "BRA",
-    "India": "IND",
-    "Germany": "DEU",
-    "Japan": "JPN",
-    "Egypt": "EGY",
-    "Argentina": "ARG",
-    "Nigeria": "NGA",
-    "Australia": "AUS"
-}
-
-# Placeholder for your specific Income Elasticity data.
-# You can update these numbers based on the source you are using!
-IEOFD_DATA = {
-    "United States": 0.15,
-    "China": 0.45,
-    "Brazil": 0.35,
-    "India": 0.60,
-    "Germany": 0.12,
-    "Japan": 0.10,
-    "Egypt": 0.55,
-    "Argentina": 0.30,
-    "Nigeria": 0.70,
-    "Australia": 0.14
-}
-
-# --- WORLD BANK API FUNCTION ---
-# We use @st.cache_data so if a student clicks a country twice, it loads instantly
+# 1. LOAD THE CLEAN DATA FROM YOUR EXCEL FILE
 @st.cache_data
-def get_world_bank_data(iso_code, indicator):
-    # Fetch the latest 5 years of data to guarantee we find the most recent non-blank year
-    url = f"https://api.worldbank.org/v2/country/{iso_code}/indicator/{indicator}?format=json&per_page=5"
+def load_elasticity_data():
+    # Reads the file we just generated!
+    return pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
+
+elasticity_df = load_elasticity_data()
+
+# 2. CREATE THE DROPDOWN MENU
+# Sort the countries alphabetically and add a default placeholder
+country_list = elasticity_df['Country'].dropna().sort_values().tolist()
+selected_country = st.selectbox("Select a Country to Analyze:", ["-- Select a Country --"] + country_list)
+
+# 3. HELPER FUNCTION TO FETCH LIVE WORLD BANK DATA
+@st.cache_data
+def get_wb_data(country_name, indicator_code):
+    # First, get the official list of World Bank country names and ISO codes
+    search_url = "https://api.worldbank.org/v2/country?format=json&per_page=300"
     try:
-        response = requests.get(url)
-        data = response.json()
+        countries_resp = requests.get(search_url).json()
+        wb_countries = {c['name']: c['id'] for c in countries_resp[1]}
         
-        # The API returns a list where the second item contains the actual data
-        if len(data) > 1:
-            for entry in data[1]:
-                if entry['value'] is not None:
-                    return entry['value'], entry['date']
+        # Use Python's built-in auto-corrector to find the closest World Bank name
+        matches = difflib.get_close_matches(country_name, wb_countries.keys(), n=1, cutoff=0.6)
+        if matches:
+            iso_code = wb_countries[matches[0]]
+        else:
+            return None, None # Country not found in WB database
+            
+        # Fetch the most recent non-empty data point (mrnev=1) for that specific country
+        url = f"https://api.worldbank.org/v2/country/{iso_code}/indicator/{indicator_code}?format=json&mrnev=1"
+        response = requests.get(url).json()
+        
+        if len(response) == 2 and response[1]:
+            latest_data = response[1][0]
+            return latest_data['value'], latest_data['date']
     except Exception as e:
         return None, None
+        
     return None, None
 
-# --- STREAMLIT DASHBOARD UI ---
-st.title("🌍 Real-World Economic Data")
-st.markdown("Select a country to pull the latest demographic and economic data directly from the World Bank.")
-
-# Dropdown for students to pick a country
-selected_country = st.selectbox("Choose a Country:", list(COUNTRIES.keys()))
-
-if selected_country:
-    iso_code = COUNTRIES[selected_country]
-    
-    with st.spinner("Fetching live data from the World Bank..."):
-        # Indicator: SP.POP.GROW (Population growth annual %)
-        pop_growth, pop_year = get_world_bank_data(iso_code, "SP.POP.GROW")
+# 4. RUN THE SIMULATION WHEN A COUNTRY IS SELECTED
+if selected_country != "-- Select a Country --":
+    with st.spinner(f"Fetching live macroeconomic data for {selected_country}..."):
         
-        # Indicator: NY.GDP.PCAP.PP.KD.ZG (GDP per capita, PPP annual % growth)
-        gdp_growth, gdp_year = get_world_bank_data(iso_code, "NY.GDP.PCAP.PP.KD.ZG")
+        # Get the Income Elasticity from our uploaded Excel file
+        country_row = elasticity_df[elasticity_df['Country'] == selected_country]
+        income_elasticity = country_row['Income_Elasticity_Food_Demand'].iloc[0]
         
-        # Fetch the static IEoFD data from our dictionary above
-        ieofd = IEOFD_DATA.get(selected_country, "N/A")
-    
-    st.markdown(f"### Current Data for {selected_country}")
-    st.divider()
-    
-    # Display the metrics in three neat columns
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Population Growth", f"{pop_growth:.2f}%" if pop_growth else "Data Missing", help=f"Reported in {pop_year}")
+        # Fetch World Bank Indicators
+        # SP.POP.GROW = Population growth (annual %)
+        pop_growth, pop_year = get_wb_data(selected_country, "SP.POP.GROW")
         
-    with col2:
-        st.metric("GDP per Capita Growth (PPP)", f"{gdp_growth:.2f}%" if gdp_growth else "Data Missing", help=f"Reported in {gdp_year}")
+        # NY.GDP.PCAP.KD.ZG = GDP per capita growth (annual %)
+        # Note: This is the standard real growth metric the WB provides to track wealth changes
+        gdp_growth, gdp_year = get_wb_data(selected_country, "NY.GDP.PCAP.KD.ZG")
         
-    with col3:
-        st.metric("IEoFD", str(ieofd), help="Income Elasticity of Food Demand")
-        
-    st.caption("Note: Growth percentages are updated dynamically via the World Bank API. Hover over the metric to see the specific reporting year.")
+        if pop_growth is not None and gdp_growth is not None:
+            # --- THE CORE CALCULATION ---
+            # % Growth in Demand = Pop Growth + (GDP Growth * Income Elasticity)
+            food_demand_growth = pop_growth + (gdp_growth * income_elasticity)
+            
+            # --- DISPLAY THE DASHBOARD ---
+            st.markdown(f"### Economic & Agricultural Outlook: **{selected_country}**")
+            
+            # Display the baseline metrics in three neat columns
+            col1, col2, col3 = st.columns(3)
+            col1.metric(label=f"Pop. Growth ({pop_year})", value=f"{pop_growth:.2f}%")
+            col2.metric(label=f"GDP per Capita Growth ({gdp_year})", value=f"{gdp_growth:.2f}%")
+            col3.metric(label="Income Elasticity of Food", value=f"{income_elasticity:.3f}")
+            
+            st.markdown("---")
+            
+            # Display the final calculated result
+            st.subheader("🌾 Projected % Growth in Total Food Demand:")
+            st.metric(label="Calculated Demand Growth", value=f"{food_demand_growth:.2f}%")
+            
+            # Provide an educational breakdown so students see the math in action
+            st.info(f"**How this is calculated for {selected_country}:**\n\n"
+                    f"Population Growth (`{pop_growth:.2f}%`) + [ GDP per Capita Growth (`{gdp_growth:.2f}%`) × Income Elasticity (`{income_elasticity:.3f}`) ] "
+                    f"= **{food_demand_growth:.2f}%**")
+        else:
+            st.error(f"Could not fetch complete World Bank data for {selected_country}. The World Bank may be missing recent data for this specific country.")
