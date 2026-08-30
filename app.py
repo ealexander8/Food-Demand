@@ -77,7 +77,7 @@ if selected_country:
             col1, col2, col3, col4 = st.columns(4)
             col1.metric(f"Pop. Growth ({pop_year})", f"{pop_growth:.2f}%")
             col2.metric(f"GDP/Capita Growth ({gdp_year})", f"{gdp_growth:.2f}%")
-            col3.metric("Income Elasticity of Food Demand", f"{income_elasticity:.3f}")
+            col3.metric("Inc. Elast. of Food Demand", f"{income_elasticity:.3f}")
             col4.metric("% Change in Food Demand", f"{total_food_demand_growth:.2f}%")
             
             st.markdown("---")
@@ -85,11 +85,11 @@ if selected_country:
             # FORMULA & PLUGGED-IN VARIABLE BREAKDOWN
             st.subheader("📐 Formula & Calculation")
             
-            # Multi-line LaTeX formula to eliminate horizontal scrollbars
+            # Multi-line LaTeX formula with line break immediately after the equals sign
             st.latex(r"""
             \begin{aligned}
-            \text{\% Change in Food Demand} &= \text{Pop Growth (\%)} \\
-            &\quad + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)
+            \text{\% Change in Food Demand} &= \\
+            &\quad \text{Pop Growth (\%)} + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)
             \end{aligned}
             """)
             
