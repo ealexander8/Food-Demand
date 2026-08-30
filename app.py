@@ -88,12 +88,12 @@ if selected_country:
             # Formatted LaTeX general formula
             st.latex(r"\text{Food Demand Growth (\%)} = \text{Pop Growth (\%)} + \left(\text{GDP/Capita Growth (\%)} \times \text{Income Elasticity}\right)")
             
-            # Plugged-in numbers callout box
+            # Plugged-in equation box showing step-by-step evaluation
             st.info(
                 f"**Calculation for {selected_country}:**\n\n"
-                f"$$\\mathbf{{{total_food_demand_growth:.2f}\\%}} = \\mathbf{{{pop_growth:.2f}\\%}} + \\left(\\mathbf{{{gdp_growth:.2f}\\%}} \\times \\mathbf{{{income_elasticity:.3f}}}\\right)$$\n\n"
-                f"* **Population Contribution:** `{pop_contrib:.2f}%`\n"
-                f"* **Income/Diet Shift Contribution:** `{gdp_growth:.2f}% × {income_elasticity:.3f} = {income_contrib:.2f}%`"
+                f"$$\\text{{Step 1: Plug in values}} \\implies \\mathbf{{{pop_growth:.2f}\\%}} + \\left(\\mathbf{{{gdp_growth:.2f}\\%}} \\times \\mathbf{{{income_elasticity:.3f}}}\\right)$$\n\n"
+                f"$$\\text{{Step 2: Multiply income terms}} \\implies \\mathbf{{{pop_growth:.2f}\\%}} + \\mathbf{{{income_contrib:.2f}\\%}}$$\n\n"
+                f"$$\\text{{Final Result}} \\implies \\mathbf{{{total_food_demand_growth:.2f}\\%}}$$"
             )
             
             # 5. PIE CHART VISUALIZATION
@@ -102,8 +102,8 @@ if selected_country:
             if pop_contrib > 0 or income_contrib > 0:
                 slices = [max(0, pop_contrib), max(0, income_contrib)]
                 labels = [
-                    f"Population Growth ({pop_contrib:.2f}%)", 
-                    f"Income Growth Effect ({income_contrib:.2f}%)"
+                    "Population Growth", 
+                    "Income Growth Effect"
                 ]
                 
                 fig, ax = plt.subplots(figsize=(6, 4))
