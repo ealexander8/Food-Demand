@@ -237,8 +237,8 @@ tab1, tab2 = st.tabs(
 # ==========================================
 with tab1:
     st.header("Aggregate Food Demand Growth")
-    st.write(
-        "Select a country to combine baseline food elasticities (from Cleaned_Table1_Food_Elasticity.xlsx) with the most recent reported World Bank population and GDP per-capita growth rates."
+    st.markdown(
+        "Select a country to combine baseline food elasticities (from [USDA Data](https://www.ers.usda.gov/data-products/international-food-consumption-patterns)) with the most recent reported World Bank population and GDP per-capita growth rates."
     )
 
     countries_2005 = sorted(df_2005["country"].unique())
@@ -283,7 +283,7 @@ with tab1:
     m3.metric(
         "Income Elasticity of Food Demand",
         f"{e_y_2005:.3f}",
-        help="Loaded from Cleaned_Table1_Food_Elasticity.xlsx",
+        help="Loaded from USDA Data",
     )
 
     st.markdown("---")
