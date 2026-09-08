@@ -400,12 +400,13 @@ with tab2:
         country_ifpri_df["income_elasticity"] * group_income_growth
     )
 
-    country_ifpri_df = country_ifpri_df.sort_values(
+    # --- BAR CHART ---
+    country_ifpri_df_sorted = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
     )
 
     fig_bar = px.bar(
-        country_ifpri_df,
+        country_ifpri_df_sorted,
         x="annual_demand_growth",
         y="food_group_name",
         orientation="h",
@@ -430,34 +431,32 @@ with tab2:
 
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    col_exp1, col_exp2 = st.columns(2)
+    # --- UNDERLYING DATA TABLE (ALWAYS DISPLAYED) ---
+    st.subheader("Underlying Data Table")
+    
+    # Selected remaining columns and set food category as index
+    display_df = (
+        country_ifpri_df.sort_values("food_group")[
+            ["food_group_name", "income_elasticity", "annual_demand_growth"]
+        ]
+        .rename(
+            columns={
+                "food_group_name": "Food Category",
+                "income_elasticity": "Income Elasticity of Demand\nfor Subgroup",
+                "annual_demand_growth": "Total Growth (%)",
+            }
+        )
+        .set_index("Food Category")
+    )
+    
+    st.dataframe(display_df, use_container_width=True)
 
-    with col_exp1:
-        with st.expander("View Underlying Data Table"):
-            display_df = country_ifpri_df[
-                [
-                    "food_group",
-                    "food_group_name",
-                    "income_elasticity",
-                    "annual_demand_growth",
-                ]
-            ].rename(
-                columns={
-                    "food_group": "Group Code",
-                    "food_group_name": "Category Name",
-                    "income_elasticity": "Income Elasticity (e_y)",
-                    "annual_demand_growth": "Total Growth (%)",
-                }
-            )
-            st.dataframe(
-                display_df.sort_values("Group Code"), use_container_width=True
-            )
-
-    with col_exp2:
-        with st.expander("How to Interpret Bennett's Law"):
-            st.markdown(
-                f"""
-                * **Starchy Staples (Group 1):** Low income elasticities keep growth closely bound to baseline population growth (**{group_pop_growth:.2f}%**).
-                * **High-Value Categories (Groups 5-8):** Proteins, dairy, and produce show high income elasticities. Income expansion (**{group_income_growth:.2f}%**) accelerates demand for these categories faster than baseline demographics alone.
-                """
-            )
+    # --- HOW TO INTERPRET BENNETT'S LAW (AT THE VERY BOTTOM) ---
+    st.markdown("---")
+    st.subheader("How to Interpret Bennett's Law")
+    st.markdown(
+        f"""
+        * **Starchy Staples (Group 1):** Low income elasticities keep growth closely bound to baseline population growth (**{group_pop_growth:.2f}%**).
+        * **High-Value Categories (Groups 5-8):** Proteins, dairy, and produce show high income elasticities. Income expansion (**{group_income_growth:.2f}%**) accelerates demand for these categories faster than baseline demographics alone.
+        """
+    )
