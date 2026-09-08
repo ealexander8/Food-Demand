@@ -60,7 +60,7 @@ BROAD_GOODS_COLOR_MAP = {
     "House Furnishings & Operations": "#009688", 
     "Medical & Health": "#D32F2F",          
     "Transport & Communication": "#7B1FA2", 
-    "Recreation & Culture": "#FBC02D",     
+    "Recreation & Culture": "#FBC02D",      
     "Education & Other": "#455A64",         
 }
 
@@ -204,7 +204,7 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities from IFPRI_Food_Elasticities file (Specification 6)."""
+    """Loads food subgroup income elasticities from IFPRI.xlsx (Specification 6)."""
     group_multipliers = {
         1: 0.40, 2: 0.30, 3: 0.50, 4: 1.10, 5: 1.30, 6: 1.20, 7: 1.00, 8: 1.15, 9: 0.80,
     }
@@ -218,10 +218,8 @@ def load_ifpri_data(df_merged):
     df_fallback = pd.DataFrame(fallback_records)
 
     try:
-        try:
-            df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
-        except FileNotFoundError:
-            df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
+        # Load directly from the new file
+        df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
 
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
@@ -253,7 +251,8 @@ def load_ifpri_data(df_merged):
             )
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
             return merged[["country", "food_group", "income_elasticity"]].dropna()
-    except Exception:
+    except Exception as e:
+        print(f"Failed to load or parse IFPRI.xlsx: {e}")
         pass
 
     return df_fallback
