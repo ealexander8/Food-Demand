@@ -552,7 +552,7 @@ with tab2:
     )
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
-    # --- INCOME ELASTICITIES TABLE (ROW COLORS MATCHED TO TRAPEZOID) ---
+    # --- INCOME ELASTICITIES TABLE ---
     st.markdown("---")
     st.subheader("Income Elasticies")
 
@@ -567,24 +567,31 @@ with tab2:
                 "annual_demand_growth": "Total Growth (%)",
             }
         )
-        .set_index("Food Category")
     )
 
-    def highlight_food_rows(row):
-        bg_color = NAME_COLOR_MAP.get(row.name, "#FFFFFF")
-        # Dark text for lighter background colors, white for dark ones
-        text_color = (
-            "#FFFFFF"
-            if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
-            else "#000000"
+    def highlight_food_category(col):
+        styles = []
+        for val in col:
+            bg_color = NAME_COLOR_MAP.get(val, "#FFFFFF")
+            text_color = (
+                "#FFFFFF"
+                if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
+                else "#000000"
+            )
+            styles.append(f"background-color: {bg_color}; color: {text_color};")
+        return styles
+
+    styled_df = (
+        display_df.style
+        .set_properties(**{"text-align": "center"})
+        .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+        .apply(highlight_food_category, subset=["Food Category"])
+        .format(
+            {
+                "Income Elasticity of Demand for Subgroup": "{:.2f}",
+                "Total Growth (%)": "{:.2f}%",
+            }
         )
-        return [f"background-color: {bg_color}; color: {text_color}"] * len(row)
-
-    styled_df = display_df.style.apply(highlight_food_rows, axis=1).format(
-        {
-            "Income Elasticity of Demand for Subgroup": "{:.2f}",
-            "Total Growth (%)": "{:.2f}%",
-        }
     )
 
-    st.dataframe(styled_df, use_container_width=False)
+    st.dataframe(styled_df, hide_index=True, use_container_width=False)
