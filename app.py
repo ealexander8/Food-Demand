@@ -177,7 +177,6 @@ def load_usda_elasticities():
 
         df_excel = df_cleaned[["country", "income_elasticity_2005"]].dropna()
 
-        # Outer join guarantees all base countries (like Afghanistan) are preserved
         merged_usda = pd.merge(
             df_base,
             df_excel,
@@ -205,7 +204,6 @@ def load_merged_data():
     df_usda = load_usda_elasticities()
 
     if not df_wb.empty:
-        # Use how="left" to keep all USDA countries even if missing from World Bank API
         merged = pd.merge(df_usda, df_wb, on="country", how="left")
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
@@ -262,12 +260,12 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         1: 35.0,  # Cereals & Staples
         2: 12.0,  # Roots & Tubers
         3: 10.0,  # Plant Proteins / Pulses
-        4: 8.0,  # Vegetables
-        5: 6.0,  # Fruits
+        4: 8.0,   # Vegetables
+        5: 6.0,   # Fruits
         6: 10.0,  # Meat & Poultry
-        7: 5.0,  # Fish
-        8: 8.0,  # Milk & Dairy
-        9: 6.0,  # Fats, Oils & Sugars
+        7: 5.0,   # Fish
+        8: 8.0,   # Milk & Dairy
+        9: 6.0,   # Fats, Oils & Sugars
     }
 
     country_df_sorted = country_df.sort_values(
@@ -368,8 +366,12 @@ st.markdown(
     "Explore how population dynamics and economic growth shape global aggregate food demand and structural dietary transitions."
 )
 
-tab1, tab2 = st.tabs(
-    ["Overview (Aggregate Data)", "Bennett's Law: Food Subgroups"]
+tab1, tab2, tab3 = st.tabs(
+    [
+        "Overview (Aggregate Data)",
+        "Dietary Composition Shift (Doubled Income)",
+        "Bennett's Law: Food Subgroups",
+    ]
 )
 
 
@@ -483,16 +485,135 @@ with tab1:
 
 
 # ==========================================
-# TAB 2: BENNETT'S LAW: FOOD SUBGROUPS
+# TAB 2: DIETARY SHIFT (DOUBLED INCOME)
 # ==========================================
 with tab2:
+    st.header("Dietary Composition Shift: Current vs. Doubled Income")
+    st.markdown(
+        "Compare relative demand across all 9 food categories under current income levels versus a 100% increase (doubled per-capita income). Higher elasticity items (e.g., meat, dairy, fruits) claim an expanded share of total food consumption, while staple crops shrink relative to the overall diet."
+    )
+
+    countries_tab2 = sorted(df_ifpri["country"].unique())
+    default_tab2_idx = (
+        countries_tab2.index("United States")
+        if "United States" in countries_tab2
+        else 0
+    )
+
+    selected_country_tab2 = st.selectbox(
+        "Select Country / Region:",
+        countries_tab2,
+        index=default_tab2_idx,
+        key="country_tab2_pie",
+    )
+
+    country_tab2_df = df_ifpri[
+        df_ifpri["country"] == selected_country_tab2
+    ].copy()
+    country_tab2_df["food_group_name"] = country_tab2_df["food_group"].map(
+        FOOD_GROUP_MAP
+    )
+
+    baseline_shares = {
+        1: 35.0,  # Cereals & Staples
+        2: 12.0,  # Roots & Tubers
+        3: 10.0,  # Plant Proteins / Pulses
+        4: 8.0,   # Vegetables
+        5: 6.0,   # Fruits
+        6: 10.0,  # Meat & Poultry
+        7: 5.0,   # Fish
+        8: 8.0,   # Milk & Dairy
+        9: 6.0,   # Fats, Oils & Sugars
+    }
+
+    country_tab2_df["current_quantity"] = country_tab2_df["food_group"].map(
+        baseline_shares
+    )
+
+    country_tab2_df["doubled_quantity"] = country_tab2_df["current_quantity"] * (
+        1.0 + country_tab2_df["income_elasticity"]
+    )
+
+    # Key Economic Metrics Overview
+    overall_e_y = df_2005[df_2005["country"] == selected_country_tab2][
+        "income_elasticity_2005"
+    ].values
+    base_e_val = float(overall_e_y[0]) if len(overall_e_y) > 0 else 0.45
+
+    food_expenditure_change = base_e_val * 100.0
+
+    st.markdown("---")
+    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1.metric(
+        "Baseline Aggregate Food Elasticity",
+        f"{base_e_val:.2f}",
+        help="Overall income elasticity of food demand for this country",
+    )
+    m_col2.metric(
+        "Food Expenditure Growth (+100% Income)",
+        f"+{food_expenditure_change:.1f}%",
+        help="Total food expenditure increases by elasticity × income growth (+100%)",
+    )
+    m_col3.metric(
+        "Food Spend Share of Income",
+        f"-{(100.0 - food_expenditure_change / 2.0):.1f}% relative",
+        help="Engel's Law: Food spending grows slower than income, reducing its proportion in total household budget.",
+    )
+
+    st.markdown("---")
+
+    pie_col1, pie_col2 = st.columns(2)
+
+    with pie_col1:
+        st.subheader("Current Diet Share")
+        fig_current = px.pie(
+            country_tab2_df,
+            values="current_quantity",
+            names="food_group_name",
+            color="food_group_name",
+            color_discrete_map=NAME_COLOR_MAP,
+            hole=0.35,
+        )
+        fig_current.update_traces(
+            textinfo="percent+label",
+            hovertemplate="<b>%{label}</b><br>Share: %{percent:.1%}<extra></extra>",
+        )
+        fig_current.update_layout(
+            showlegend=False, height=480, margin=dict(l=20, r=20, t=30, b=20)
+        )
+        st.plotly_chart(fig_current, use_container_width=True)
+
+    with pie_col2:
+        st.subheader("Diet Share with Doubled Income (+100%)")
+        fig_doubled = px.pie(
+            country_tab2_df,
+            values="doubled_quantity",
+            names="food_group_name",
+            color="food_group_name",
+            color_discrete_map=NAME_COLOR_MAP,
+            hole=0.35,
+        )
+        fig_doubled.update_traces(
+            textinfo="percent+label",
+            hovertemplate="<b>%{label}</b><br>Share: %{percent:.1%}<extra></extra>",
+        )
+        fig_doubled.update_layout(
+            showlegend=False, height=480, margin=dict(l=20, r=20, t=30, b=20)
+        )
+        st.plotly_chart(fig_doubled, use_container_width=True)
+
+
+# ==========================================
+# TAB 3: BENNETT'S LAW: FOOD SUBGROUPS
+# ==========================================
+with tab3:
     st.header("Commodity-Specific Demand Growth (Bennett's Law)")
     st.write(
         "Explore how demand shifts across 9 distinct food categories using updated elasticities."
     )
 
     countries_ifpri = sorted(df_ifpri["country"].unique())
-    default_tab2_index = (
+    default_tab3_index = (
         countries_ifpri.index("United States")
         if "United States" in countries_ifpri
         else 0
@@ -504,7 +625,7 @@ with tab2:
         selected_country_ifpri = st.selectbox(
             "Select Country / Region:",
             countries_ifpri,
-            index=default_tab2_index,
+            index=default_tab3_index,
             key="country_ifpri",
         )
 
@@ -565,17 +686,15 @@ with tab2:
         color_discrete_map=NAME_COLOR_MAP,
     )
 
-    # UPDATED: Use explicit + or - formatting for the bar labels
     fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
     fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
-    
-    # UPDATED: Apply explicit + or - formatting to the x-axis
+
     fig_bar.update_layout(
         height=500,
         xaxis=dict(
             title="Predicted Annual Demand Growth (%)",
             tickformat="+.2f",
-            ticksuffix="%"
+            ticksuffix="%",
         ),
         yaxis_title="",
         showlegend=False,
@@ -594,7 +713,6 @@ with tab2:
     st.markdown("---")
     st.subheader("Income Elasticities")
 
-    # CSS to force center alignment on all dataframe column headers and data cells
     st.markdown(
         """
         <style>
@@ -637,7 +755,8 @@ with tab2:
             bg_color = NAME_COLOR_MAP.get(val, "#FFFFFF")
             text_color = (
                 "#FFFFFF"
-                if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
+                if bg_color
+                in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
                 else "#000000"
             )
             styles.append(
@@ -645,24 +764,35 @@ with tab2:
             )
         return styles
 
-    # UPDATED: Use explicit + or - formatting for Total Growth column
     styled_df = (
-        display_df.style
-        .set_properties(**{"text-align": "center"})
-        .set_table_styles([
-            {"selector": "th", "props": [("text-align", "center !important"), ("justify-content", "center !important")]},
-            {"selector": "td", "props": [("text-align", "center !important"), ("justify-content", "center !important")]}
-        ])
+        display_df.style.set_properties(**{"text-align": "center"})
+        .set_table_styles(
+            [
+                {
+                    "selector": "th",
+                    "props": [
+                        ("text-align", "center !important"),
+                        ("justify-content", "center !important"),
+                    ],
+                },
+                {
+                    "selector": "td",
+                    "props": [
+                        ("text-align", "center !important"),
+                        ("justify-content", "center !important"),
+                    ],
+                },
+            ]
+        )
         .apply(highlight_food_category, subset=["Food Category"])
         .format(
             {
                 "Income Elasticity (Subgroup)": "{:.2f}",
-                "Total Growth (%)": "{:+.2f}%", 
+                "Total Growth (%)": "{:+.2f}%",
             }
         )
     )
 
-    # Render narrow, left-aligned table with centered headers and cells
     st.dataframe(
         styled_df,
         hide_index=True,
