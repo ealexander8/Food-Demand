@@ -288,7 +288,8 @@ def load_table1_broad_categories(df_merged):
 @st.cache_data
 def load_ifpri_data(df_merged):
     """Loads food subgroup income elasticities from IFPRI_Food_Elasticities file.
-    Supports 'estimate_2021' or 'income_elasticity' column names.
+    Supports 'estimate_2021' or 'income_elasticity' column names, and filters
+    for Specification 6 (Unconditional - income).
     Falls back to Bennett's Law relative scaling principles if the file is missing.
     """
     group_multipliers = {
@@ -330,6 +331,10 @@ def load_ifpri_data(df_merged):
         # Map 'estimate_2021' to 'income_elasticity' if present
         if "estimate_2021" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
+
+        # FILTER FOR SPECIFICATION 6 (Unconditional - income)
+        if "specification" in df_ifpri_raw.columns:
+            df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
