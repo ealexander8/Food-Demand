@@ -56,7 +56,7 @@ BROAD_GOODS_COLOR_MAP = {
     "Food": "#2E7D32",                      # Green
     "Beverages & Tobacco": "#8D6E63",       # Brown
     "Clothing & Footwear": "#E64A19",        # Deep Orange
-    "Housing": "#1976D2",                   # Blue
+    "Housing": "#1976D2",                    # Blue
     "House Furnishings & Operations": "#009688", # Teal
     "Medical & Health": "#D32F2F",          # Red
     "Transport & Communication": "#7B1FA2", # Purple
@@ -287,9 +287,11 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Generates food subgroup income elasticities for ALL countries in the dataset
-    using Bennett's Law relative scaling principles (Tab 3).
+    """Loads food subgroup income elasticities from an IFPRI dataset file.
+    Falls back to generating them using Bennett's Law relative scaling principles
+    if the file is missing or lacks specific countries.
     """
+    # 1. Base generation logic (Bennett's Law scaling for fallbacks)
     group_multipliers = {
         1: 0.50,  # Cereals & Staples
         2: 0.40,  # Roots & Tubers
@@ -302,21 +304,57 @@ def load_ifpri_data(df_merged):
         9: 0.80,  # Fats, Oils & Sugars
     }
 
-    records = []
+    fallback_records = []
     for _, row in df_merged.iterrows():
         country = row["country"]
         base_e = float(row.get("income_elasticity_2005", 0.45))
         for fg_id, mult in group_multipliers.items():
             sub_e = round(max(0.01, base_e * mult), 2)
-            records.append(
+            fallback_records.append(
                 {
                     "country": country,
                     "food_group": fg_id,
                     "income_elasticity": sub_e,
                 }
             )
+    
+    df_fallback = pd.DataFrame(fallback_records)
 
-    return pd.DataFrame(records)
+    # 2. Attempt to load actual IFPRI data from external files
+    try:
+        try:
+            df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
+        except FileNotFoundError:
+            df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
+
+        # Standardize column headers to lower case
+        df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
+
+        # Verify expected columns exist
+        if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
+            df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
+            df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
+            df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
+
+            # Merge real IFPRI data with our fallback to patch any holes/missing countries
+            merged = pd.merge(
+                df_fallback,
+                df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
+                on=["country", "food_group"],
+                how="left",
+                suffixes=("_fallback", "_real")
+            )
+
+            # Pull in the real data where it exists, otherwise keep fallback
+            merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
+            
+            return merged[["country", "food_group", "income_elasticity"]]
+
+    except Exception as e:
+        # Silently catch loading errors and proceed with the fallback modeled data
+        pass
+
+    return df_fallback
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
