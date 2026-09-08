@@ -27,20 +27,21 @@ FOOD_GROUP_MAP = {
 # 2. LIVE WORLD BANK API & DATA LOADERS
 # ==========================================
 @st.cache_data(ttl=86400)
-def fetch_world_bank_indicators(year="2005"):
-    """Fetches Population Growth (SP.POP.GROW) and Per Capita GDP Growth
+def fetch_latest_world_bank_indicators():
+    """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
 
-    (NY.GDP.PCAP.KD.ZG) directly from the World Bank REST API.
+    Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
+    'mrnev=1' parameter (Most Recent Non-Empty Value).
     """
     indicators = {
-        "SP.POP.GROW": "pop_growth",
-        "NY.GDP.PCAP.KD.ZG": "income_growth",
+        "SP.POP.GROW": ("pop_growth", "pop_year"),
+        "NY.GDP.PCAP.KD.ZG": ("income_growth", "income_year"),
     }
 
     df_combined = pd.DataFrame()
 
-    for indicator_code, col_name in indicators.items():
-        url = f"http://api.worldbank.org/v2/country/all/indicator/{indicator_code}?date={year}&format=json&per_page=300"
+    for indicator_code, (val_col, year_col) in indicators.items():
+        url = f"http://api.worldbank.org/v2/country/all/indicator/{indicator_code}?mrnev=1&format=json&per_page=300"
         try:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
@@ -49,7 +50,8 @@ def fetch_world_bank_indicators(year="2005"):
                     records = [
                         {
                             "country": item["country"]["value"],
-                            col_name: item["value"],
+                            val_col: item["value"],
+                            year_col: item["date"],
                         }
                         for item in json_data[1]
                         if item["value"] is not None
@@ -191,19 +193,23 @@ def load_usda_elasticities():
 
 @st.cache_data
 def load_merged_data():
-    """Merges live World Bank API indicators with USDA Elasticity data."""
-    df_wb = fetch_world_bank_indicators(year="2005")
+    """Merges the latest World Bank API indicators with 2005 USDA Elasticities."""
+    df_wb = fetch_latest_world_bank_indicators()
     df_usda = load_usda_elasticities()
 
     if not df_wb.empty:
         merged = pd.merge(df_usda, df_wb, on="country", how="inner")
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
+        merged["pop_year"] = merged["pop_year"].fillna("Recent")
+        merged["income_year"] = merged["income_year"].fillna("Recent")
         return merged
 
-    # Graceful fallback if API fails completely
+    # Fallback if API fails
     df_usda["pop_growth"] = 1.20
     df_usda["income_growth"] = 2.50
+    df_usda["pop_year"] = "N/A"
+    df_usda["income_year"] = "N/A"
     return df_usda
 
 
@@ -276,12 +282,12 @@ tab1, tab2 = st.tabs(
 
 
 # ==========================================
-# TAB 1: 2005 AGGREGATE MODEL (WORLD BANK LIVE API)
+# TAB 1: AGGREGATE MODEL (LATEST WORLD BANK API INDICATORS)
 # ==========================================
 with tab1:
-    st.header("Aggregate Food Demand Growth (2005 World Bank API)")
+    st.header("Aggregate Food Demand Growth")
     st.write(
-        "Select a country to automatically fetch official World Bank population growth, GDP per-capita growth, and USDA elasticity."
+        "Select a country to combine 2005 USDA baseline food elasticities with the most recent reported World Bank population and GDP per-capita growth rates."
     )
 
     col1, col2 = st.columns([1, 1])
@@ -295,7 +301,7 @@ with tab1:
         )
 
         selected_country_2005 = st.selectbox(
-            "Select Country (100+ Live World Bank Datasets Available):",
+            "Select Country (100+ Datasets Available):",
             countries_2005,
             index=default_index,
             key="country_2005",
@@ -305,31 +311,55 @@ with tab1:
             0
         ]
         e_y_2005 = float(country_row["income_elasticity_2005"])
-        pop_growth_2005 = float(country_row["pop_growth"])
-        income_growth_2005 = float(country_row["income_growth"])
+        pop_growth_recent = float(country_row["pop_growth"])
+        income_growth_recent = float(country_row["income_growth"])
+        pop_year = str(country_row.get("pop_year", "Recent"))
+        income_year = str(country_row.get("income_year", "Recent"))
 
-        pop_contrib_2005 = pop_growth_2005
-        inc_contrib_2005 = e_y_2005 * income_growth_2005
-        total_growth_2005 = pop_contrib_2005 + inc_contrib_2005
+        pop_contrib = pop_growth_recent
+        inc_contrib = e_y_2005 * income_growth_recent
+        total_growth = pop_contrib + inc_contrib
 
         st.markdown("---")
-        st.subheader(
-            f"🌐 Live World Bank API Indicators ({selected_country_2005}, 2005)"
-        )
+        st.subheader(f"🌐 Indicators for {selected_country_2005}")
 
         m1, m2, m3 = st.columns(3)
-        m1.metric("Population Growth", f"{pop_growth_2005:.2f}%")
-        m2.metric("Per Capita GDP Growth", f"{income_growth_2005:.2f}%")
-        m3.metric("Food Elasticity (e_y)", f"{e_y_2005:.2f}")
+        m1.metric(
+            f"Pop. Growth ({pop_year})",
+            f"{pop_growth_recent:.2f}%",
+            help="Most recent annual population growth rate from World Bank API",
+        )
+        m2.metric(
+            f"GDP/Cap Growth ({income_year})",
+            f"{income_growth_recent:.2f}%",
+            help="Most recent annual per capita GDP growth rate from World Bank API",
+        )
+        m3.metric(
+            "Income Elasticity of Food Demand",
+            f"{e_y_2005:.2f}",
+            help="USDA 2005 baseline income elasticity of food demand",
+        )
 
         st.markdown("---")
         st.metric(
             label=f"Projected Annual Food Demand Growth for {selected_country_2005}",
-            value=f"{total_growth_2005:.2f}%",
+            value=f"{total_growth:.2f}%",
         )
 
-        st.caption(
-            f"Formula: **{pop_contrib_2005:.2f}%** (Population Growth) + (**{e_y_2005:.2f}** × **{income_growth_2005:.2f}%** GDP Growth) = **{total_growth_2005:.2f}%** Annual Demand Growth"
+        st.markdown("---")
+        st.markdown(
+            f"""
+            <div style="font-size: 1.15rem; line-height: 1.7; background-color: rgba(128, 128, 128, 0.08); padding: 16px; border-radius: 8px;">
+                <strong>Formula:</strong><br>
+                <span>Total Food Demand Growth = Population Growth + (Income Elasticity of Food Demand × Per Capita GDP Growth)</span>
+                <br><br>
+                <strong>Calculation:</strong><br>
+                <span style="font-size: 1.35rem; font-weight: bold; color: #0083B0;">
+                    {total_growth:.2f}% = {pop_contrib:.2f}% + ({e_y_2005:.2f} × {income_growth_recent:.2f}%)
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     with col2:
