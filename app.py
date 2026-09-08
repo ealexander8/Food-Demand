@@ -253,33 +253,13 @@ def load_table1_broad_categories(df_merged):
     """
     records = []
 
-    # Check if Table1(2) Excel exists directly
-    table1_excel_data = None
-    for fname in ["Table1(2).xlsx", "Table1.xlsx", "Cleaned_Table1_Food_Elasticity.xlsx"]:
-        try:
-            excel_df = pd.read_excel(fname, sheet_name=None)
-            sheet_keys = list(excel_df.keys())
-            target_sheet = next((s for s in sheet_keys if "1" in s or "2" in s), sheet_keys[0])
-            raw_df = excel_df[target_sheet]
-            if len(raw_df.columns) >= 9:
-                table1_excel_data = raw_df
-                break
-        except Exception:
-            continue
-
     for _, row in df_merged.iterrows():
         country = row["country"]
         food_e = float(row.get("income_elasticity_2005", 0.45))
 
-        # Dynamic estimation of base food budget share following Engel's Law:
-        # High elasticity (poorer countries) = higher food budget share (~40-60%)
-        # Low elasticity (wealthier countries) = lower food budget share (~10-15%)
         base_food_share = max(10.0, min(58.0, food_e * 65.0))
-
-        # Remaining budget shared across the other 8 consumption categories
         rem_share = 100.0 - base_food_share
-        
-        # Category definitions and realistic elasticities based on USDA ICP Table 1(2)
+
         categories = [
             ("Food", food_e, base_food_share),
             ("Beverages & Tobacco", 0.65, rem_share * 0.06),
@@ -601,16 +581,25 @@ with tab2:
     ].copy()
 
     # Calculate expenditure if income doubles (+100% income increase)
-    # Expenditure_new = Base_Share * (1 + 1.0 * income_elasticity)
     country_broad_df["doubled_expenditure"] = country_broad_df["base_budget_share"] * (
         1.0 + country_broad_df["income_elasticity"]
     )
     
-    # Calculate percentage share of the new doubled budget
     total_doubled_expenditure = country_broad_df["doubled_expenditure"].sum()
     country_broad_df["doubled_budget_share"] = (
         country_broad_df["doubled_expenditure"] / total_doubled_expenditure
     ) * 100.0
+
+    # Categorize good type based on elasticity
+    def classify_good(e):
+        if e < 0:
+            return "Inferior Good"
+        elif e > 1:
+            return "Luxury Good"
+        else:
+            return "Normal Good"
+
+    country_broad_df["good_classification"] = country_broad_df["income_elasticity"].apply(classify_good)
 
     # Extract food metrics for key callout
     food_row = country_broad_df[country_broad_df["good_type"] == "Food"].iloc[0]
@@ -682,16 +671,15 @@ with tab2:
         st.plotly_chart(fig_doubled_broad, use_container_width=True)
 
     st.markdown("---")
-    st.subheader(f"Table 1(2) Elasticity & Budget Share Details for {selected_country_tab2}")
+    st.subheader(f"Table 1(2) Elasticity & Good Type Details for {selected_country_tab2}")
     
     summary_broad_df = country_broad_df[
-        ["good_type", "income_elasticity", "base_budget_share", "doubled_budget_share"]
+        ["good_type", "income_elasticity", "good_classification"]
     ].rename(
         columns={
             "good_type": "Expenditure Type",
             "income_elasticity": "Income Elasticity (e)",
-            "base_budget_share": "Current Share (%)",
-            "doubled_budget_share": "Share at +100% Income (%)",
+            "good_classification": "Good Type",
         }
     )
 
@@ -699,8 +687,6 @@ with tab2:
         summary_broad_df.style.format(
             {
                 "Income Elasticity (e)": "{:.3f}",
-                "Current Share (%)": "{:.1f}%",
-                "Share at +100% Income (%)": "{:.1f}%",
             }
         ),
         hide_index=True,
