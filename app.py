@@ -11,23 +11,20 @@ st.set_page_config(page_title="Expenditure Elasticities App", layout="wide")
 def load_usda_data():
     """
     Loads the USDA data from 2005.
-    (Assumes the file is named 'Table1(2).xlsx' or 'Table1(2).xls')
+    Strictly calls for 'Table1(2).xlsx'.
     """
     try:
-        # Update the exact file extension if yours is .xls or .csv
         df = pd.read_excel("Table1(2).xlsx")
-    except FileNotFoundError:
-        try:
-            df = pd.read_excel("Table1(2).xls")
-        except Exception as e:
-            st.error(f"Could not load USDA data: {e}")
-            df = pd.DataFrame()
+    except Exception as e:
+        st.error(f"Could not load USDA data: {e}")
+        df = pd.DataFrame()
     return df
 
 @st.cache_data
 def load_ifpri_data():
     """
     Loads the IFPRI data from the newly uploaded Excel file.
+    Strictly calls for 'Predicted_Expenditure_Elasticities.xlsx'.
     """
     try:
         df = pd.read_excel("Predicted_Expenditure_Elasticities.xlsx")
@@ -57,9 +54,9 @@ with tab1:
     
     if not usda_df.empty:
         st.dataframe(usda_df, use_container_width=True)
-        # Add your Tab 1 USDA visualzations here
+        # Add your Tab 1 USDA visualizations here
     else:
-        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the directory.")
+        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the exact same directory as your app.py file.")
 
 # --- TAB 2: USDA Deep Dive ---
 with tab2:
@@ -68,9 +65,9 @@ with tab2:
     
     if not usda_df.empty:
         st.dataframe(usda_df.head(15), use_container_width=True)
-        # Add your Tab 2 USDA visualzations here
+        # Add your Tab 2 USDA visualizations here
     else:
-        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the directory.")
+        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the exact same directory as your app.py file.")
 
 # --- TAB 3: IFPRI Data ---
 with tab3:
@@ -83,8 +80,7 @@ with tab3:
         
         st.subheader("Interactive IFPRI Visualization")
         
-        # A dynamic Plotly chart placeholder so the app won't crash 
-        # while waiting for your exact column names
+        # A dynamic Plotly chart placeholder using whatever columns exist in your file
         if len(ifpri_df.columns) >= 2:
             col1, col2 = st.columns(2)
             with col1:
@@ -101,4 +97,4 @@ with tab3:
             )
             st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("IFPRI data not found. Please ensure 'Predicted_Expenditure_Elasticities.xlsx' is in the directory.")
+        st.warning("IFPRI data not found. Please ensure 'Predicted_Expenditure_Elasticities.xlsx' is in the exact same directory as your app.py file.")
