@@ -231,8 +231,16 @@ def load_ifpri_data(df_merged):
         if "specification" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
+        # Explicitly label Region 0 as "World Average"
+        if "region" in df_ifpri_raw.columns:
+            df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World Average"
+
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
+            
+            # Ensure "World Average" retains its proper casing after the .title() cast
+            df_ifpri_raw["country"] = df_ifpri_raw["country"].replace({"World Average": "World Average"})
+            
             df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
             df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
@@ -240,11 +248,11 @@ def load_ifpri_data(df_merged):
                 df_fallback,
                 df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
                 on=["country", "food_group"],
-                how="left",
+                how="outer", # Changed to outer so World Average isn't dropped if not in fallback
                 suffixes=("_fallback", "_real")
             )
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
-            return merged[["country", "food_group", "income_elasticity"]]
+            return merged[["country", "food_group", "income_elasticity"]].dropna()
     except Exception:
         pass
 
