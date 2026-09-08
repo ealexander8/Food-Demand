@@ -45,6 +45,7 @@ NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
     """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
+
     Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
     'mrnev=1' parameter (Most Recent Non-Empty Value).
     """
@@ -81,47 +82,20 @@ def fetch_latest_world_bank_indicators():
         except Exception as e:
             st.error(f"Error fetching indicator {indicator_code}: {e}")
 
+    if not df_combined.empty:
+        df_combined["country"] = (
+            df_combined["country"].astype(str).str.strip().str.title()
+        )
+
     return df_combined
 
 
 @st.cache_data
 def load_usda_elasticities():
-    """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx."""
-    try:
-        df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
+    """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
 
-        df.columns = [str(c).strip().lower() for c in df.columns]
-
-        country_col = next(
-            (c for c in df.columns if "country" in c or "name" in c),
-            df.columns[0],
-        )
-        elasticity_col = next(
-            (
-                c
-                for c in df.columns
-                if "elasticity" in c or "income" in c or "ey" in c or "food" in c
-            ),
-            df.columns[1],
-        )
-
-        df_cleaned = df.rename(
-            columns={
-                country_col: "country",
-                elasticity_col: "income_elasticity_2005",
-            }
-        )
-        df_cleaned["country"] = df_cleaned["country"].astype(str).str.strip()
-        df_cleaned["income_elasticity_2005"] = pd.to_numeric(
-            df_cleaned["income_elasticity_2005"], errors="coerce"
-        )
-
-        df_result = df_cleaned[["country", "income_elasticity_2005"]].dropna()
-        if not df_result.empty:
-            return df_result
-    except Exception as e:
-        st.info(f"Using default elasticity fallback: {e}")
-
+    guaranteeing that all baseline countries (like Afghanistan) exist.
+    """
     usda_base = [
         {"country": "United States", "income_elasticity_2005": 0.346},
         {"country": "Afghanistan", "income_elasticity_2005": 0.78},
@@ -169,7 +143,61 @@ def load_usda_elasticities():
         {"country": "United Kingdom", "income_elasticity_2005": 0.10},
         {"country": "Viet Nam", "income_elasticity_2005": 0.58},
     ]
-    return pd.DataFrame(usda_base)
+    df_base = pd.DataFrame(usda_base)
+    df_base["country"] = df_base["country"].astype(str).str.strip().str.title()
+
+    try:
+        df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
+
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        country_col = next(
+            (c for c in df.columns if "country" in c or "name" in c),
+            df.columns[0],
+        )
+        elasticity_col = next(
+            (
+                c
+                for c in df.columns
+                if "elasticity" in c or "income" in c or "ey" in c or "food" in c
+            ),
+            df.columns[1],
+        )
+
+        df_cleaned = df.rename(
+            columns={
+                country_col: "country",
+                elasticity_col: "income_elasticity_2005",
+            }
+        )
+        df_cleaned["country"] = (
+            df_cleaned["country"].astype(str).str.strip().str.title()
+        )
+        df_cleaned["income_elasticity_2005"] = pd.to_numeric(
+            df_cleaned["income_elasticity_2005"], errors="coerce"
+        )
+
+        df_excel = df_cleaned[["country", "income_elasticity_2005"]].dropna()
+
+        # Outer join guarantees all base countries (like Afghanistan) are preserved
+        merged_usda = pd.merge(
+            df_base,
+            df_excel,
+            on="country",
+            how="outer",
+            suffixes=("_base", "_excel"),
+        )
+        merged_usda["income_elasticity_2005"] = merged_usda[
+            "income_elasticity_2005_excel"
+        ].fillna(merged_usda["income_elasticity_2005_base"])
+        df_result = merged_usda[["country", "income_elasticity_2005"]].dropna()
+
+        if not df_result.empty:
+            return df_result
+    except Exception as e:
+        st.info(f"Using default elasticity fallback: {e}")
+
+    return df_base
 
 
 @st.cache_data
@@ -179,7 +207,7 @@ def load_merged_data():
     df_usda = load_usda_elasticities()
 
     if not df_wb.empty:
-        # Use how="left" to retain all USDA countries even if World Bank API lacks recent indicators
+        # Use how="left" to keep all USDA countries even if missing from World Bank API
         merged = pd.merge(df_usda, df_wb, on="country", how="left")
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
@@ -197,6 +225,7 @@ def load_merged_data():
 @st.cache_data
 def load_ifpri_data(df_merged):
     """Generates food subgroup income elasticities for ALL countries in the dataset
+
     using Bennett's Law relative scaling principles.
     """
     group_multipliers = {
@@ -561,10 +590,18 @@ with tab2:
     st.markdown("---")
     st.subheader("Income Elasticities")
 
-    # CSS to center table headers & column content in Streamlit
+    # CSS to force center alignment on all dataframe column headers and data cells
     st.markdown(
         """
         <style>
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        [data-testid="stDataFrame"] [role="columnheader"] * {
+            justify-content: center !important;
+            text-align: center !important;
+        }
         [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td {
             text-align: center !important;
         }
@@ -608,8 +645,8 @@ with tab2:
         display_df.style
         .set_properties(**{"text-align": "center"})
         .set_table_styles([
-            {"selector": "th", "props": [("text-align", "center !important")]},
-            {"selector": "td", "props": [("text-align", "center !important")]}
+            {"selector": "th", "props": [("text-align", "center !important"), ("justify-content", "center !important")]},
+            {"selector": "td", "props": [("text-align", "center !important"), ("justify-content", "center !important")]}
         ])
         .apply(highlight_food_category, subset=["Food Category"])
         .format(
@@ -620,7 +657,7 @@ with tab2:
         )
     )
 
-    # Left-aligned compact table
+    # Render narrow, left-aligned table with centered headers and cells
     st.dataframe(
         styled_df,
         hide_index=True,
