@@ -45,7 +45,6 @@ NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
     """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
-
     Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
     'mrnev=1' parameter (Most Recent Non-Empty Value).
     """
@@ -180,11 +179,12 @@ def load_merged_data():
     df_usda = load_usda_elasticities()
 
     if not df_wb.empty:
-        merged = pd.merge(df_usda, df_wb, on="country", how="inner")
+        # Use how="left" to retain all USDA countries even if World Bank API lacks recent indicators
+        merged = pd.merge(df_usda, df_wb, on="country", how="left")
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
-        merged["pop_year"] = merged["pop_year"].fillna("Recent")
-        merged["income_year"] = merged["income_year"].fillna("Recent")
+        merged["pop_year"] = merged["pop_year"].fillna("Default/Fallback")
+        merged["income_year"] = merged["income_year"].fillna("Default/Fallback")
         return merged
 
     df_usda["pop_growth"] = 1.20
@@ -197,7 +197,6 @@ def load_merged_data():
 @st.cache_data
 def load_ifpri_data(df_merged):
     """Generates food subgroup income elasticities for ALL countries in the dataset
-
     using Bennett's Law relative scaling principles.
     """
     group_multipliers = {
@@ -566,10 +565,10 @@ with tab2:
     st.markdown(
         """
         <style>
-        [data-testid="stDataFrame"] th {
+        [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td {
             text-align: center !important;
         }
-        [data-testid="stDataFrame"] th > div {
+        [data-testid="stDataFrame"] th > div, [data-testid="stDataFrame"] td > div {
             justify-content: center !important;
             text-align: center !important;
         }
@@ -601,7 +600,7 @@ with tab2:
                 else "#000000"
             )
             styles.append(
-                f"background-color: {bg_color}; color: {text_color}; text-align: center;"
+                f"background-color: {bg_color}; color: {text_color}; text-align: center !important;"
             )
         return styles
 
@@ -621,23 +620,20 @@ with tab2:
         )
     )
 
-    # Fixed compact width layout to avoid full page stretching
-    tbl_left, tbl_center, tbl_right = st.columns([0.15, 0.7, 0.15])
-
-    with tbl_center:
-        st.dataframe(
-            styled_df,
-            hide_index=True,
-            use_container_width=False,
-            column_config={
-                "Food Category": st.column_config.TextColumn(
-                    alignment="center", width=220
-                ),
-                "Income Elasticity (Subgroup)": st.column_config.NumberColumn(
-                    alignment="center", format="%.2f", width=180
-                ),
-                "Total Growth (%)": st.column_config.TextColumn(
-                    alignment="center", width=140
-                ),
-            },
-        )
+    # Left-aligned compact table
+    st.dataframe(
+        styled_df,
+        hide_index=True,
+        use_container_width=False,
+        column_config={
+            "Food Category": st.column_config.TextColumn(
+                alignment="center", width=220
+            ),
+            "Income Elasticity (Subgroup)": st.column_config.NumberColumn(
+                alignment="center", format="%.2f", width=180
+            ),
+            "Total Growth (%)": st.column_config.TextColumn(
+                alignment="center", width=140
+            ),
+        },
+    )
