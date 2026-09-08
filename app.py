@@ -560,7 +560,23 @@ with tab2:
 
     # --- INCOME ELASTICITIES TABLE ---
     st.markdown("---")
-    st.subheader("Income Elasticies")
+    st.subheader("Income Elasticities")
+
+    # CSS to center table headers & column content in Streamlit
+    st.markdown(
+        """
+        <style>
+        [data-testid="stDataFrame"] th {
+            text-align: center !important;
+        }
+        [data-testid="stDataFrame"] th > div {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     display_df = (
         country_ifpri_df.sort_values("income_elasticity", ascending=False)[
@@ -569,7 +585,7 @@ with tab2:
         .rename(
             columns={
                 "food_group_name": "Food Category",
-                "income_elasticity": "Income Elasticity of Demand for Subgroup",
+                "income_elasticity": "Income Elasticity (Subgroup)",
                 "annual_demand_growth": "Total Growth (%)",
             }
         )
@@ -599,21 +615,29 @@ with tab2:
         .apply(highlight_food_category, subset=["Food Category"])
         .format(
             {
-                "Income Elasticity of Demand for Subgroup": "{:.2f}",
+                "Income Elasticity (Subgroup)": "{:.2f}",
                 "Total Growth (%)": "{:.2f}%",
             }
         )
     )
 
-    st.dataframe(
-        styled_df,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "Food Category": st.column_config.TextColumn(alignment="center"),
-            "Income Elasticity of Demand for Subgroup": st.column_config.NumberColumn(
-                alignment="center", format="%.2f"
-            ),
-            "Total Growth (%)": st.column_config.TextColumn(alignment="center"),
-        },
-    )
+    # Fixed compact width layout to avoid full page stretching
+    tbl_left, tbl_center, tbl_right = st.columns([0.15, 0.7, 0.15])
+
+    with tbl_center:
+        st.dataframe(
+            styled_df,
+            hide_index=True,
+            use_container_width=False,
+            column_config={
+                "Food Category": st.column_config.TextColumn(
+                    alignment="center", width=220
+                ),
+                "Income Elasticity (Subgroup)": st.column_config.NumberColumn(
+                    alignment="center", format="%.2f", width=180
+                ),
+                "Total Growth (%)": st.column_config.TextColumn(
+                    alignment="center", width=140
+                ),
+            },
+        )
