@@ -45,7 +45,6 @@ NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
     """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
-
     Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
     'mrnev=1' parameter (Most Recent Non-Empty Value).
     """
@@ -93,7 +92,6 @@ def fetch_latest_world_bank_indicators():
 @st.cache_data
 def load_usda_elasticities():
     """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
-
     guaranteeing that all baseline countries (like Afghanistan) exist.
     """
     usda_base = [
@@ -225,7 +223,6 @@ def load_merged_data():
 @st.cache_data
 def load_ifpri_data(df_merged):
     """Generates food subgroup income elasticities for ALL countries in the dataset
-
     using Bennett's Law relative scaling principles.
     """
     group_multipliers = {
@@ -416,12 +413,12 @@ with tab1:
     m1, m2, m3 = st.columns(3)
     m1.metric(
         f"Pop. Growth ({pop_year})",
-        f"{pop_growth_recent:.2f}%",
+        f"{pop_growth_recent:+.2f}%",
         help="Most recent annual population growth rate from World Bank API",
     )
     m2.metric(
         f"GDP/Cap Growth ({income_year})",
-        f"{income_growth_recent:.2f}%",
+        f"{income_growth_recent:+.2f}%",
         help="Most recent annual per capita GDP growth rate from World Bank API",
     )
     m3.metric(
@@ -433,7 +430,7 @@ with tab1:
     st.markdown("---")
     st.metric(
         label=f"Projected Annual Food Demand Growth for {selected_country_2005}",
-        value=f"{total_growth:.2f}%",
+        value=f"{total_growth:+.2f}%",
     )
 
     st.markdown("---")
@@ -445,7 +442,7 @@ with tab1:
             <br><br>
             <strong>Calculation:</strong><br>
             <span style="font-size: 1.35rem; font-weight: bold; color: #0083B0;">
-                {total_growth:.2f}% = {pop_contrib:.2f}% + ({e_y_2005:.3f} × {income_growth_recent:.2f}%)
+                {total_growth:+.2f}% = {pop_contrib:+.2f}% + ({e_y_2005:.3f} × {income_growth_recent:+.2f}%)
             </span>
         </div>
         """,
@@ -475,7 +472,7 @@ with tab1:
     )
     fig_driver.update_traces(
         textinfo="percent+label",
-        hovertemplate="%{label}: %{value:.2f}% points",
+        hovertemplate="%{label}: %{value:+.2f}% points",
     )
     fig_driver.update_layout(
         showlegend=False,
@@ -524,7 +521,7 @@ with tab2:
     with ctrl_col2:
         st.metric(
             f"Pop. Growth ({group_pop_year})",
-            f"{group_pop_growth:.2f}%",
+            f"{group_pop_growth:+.2f}%",
             help="Most recent annual population growth rate from World Bank API",
         )
 
@@ -568,11 +565,18 @@ with tab2:
         color_discrete_map=NAME_COLOR_MAP,
     )
 
-    fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
+    # UPDATED: Use explicit + or - formatting for the bar labels
+    fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
     fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
+    
+    # UPDATED: Apply explicit + or - formatting to the x-axis
     fig_bar.update_layout(
         height=500,
-        xaxis_title="Predicted Annual Demand Growth (%)",
+        xaxis=dict(
+            title="Predicted Annual Demand Growth (%)",
+            tickformat="+.2f",
+            ticksuffix="%"
+        ),
         yaxis_title="",
         showlegend=False,
     )
@@ -641,6 +645,7 @@ with tab2:
             )
         return styles
 
+    # UPDATED: Use explicit + or - formatting for Total Growth column
     styled_df = (
         display_df.style
         .set_properties(**{"text-align": "center"})
@@ -652,7 +657,7 @@ with tab2:
         .format(
             {
                 "Income Elasticity (Subgroup)": "{:.2f}",
-                "Total Growth (%)": "{:.2f}%",
+                "Total Growth (%)": "{:+.2f}%", 
             }
         )
     )
