@@ -195,37 +195,38 @@ def load_merged_data():
 
 
 @st.cache_data
-def load_ifpri_data():
-    sample_ifpri = [
-        {"country": "Kenya", "food_group": 1, "income_elasticity": 0.45},
-        {"country": "Kenya", "food_group": 2, "income_elasticity": 0.35},
-        {"country": "Kenya", "food_group": 3, "income_elasticity": 0.50},
-        {"country": "Kenya", "food_group": 4, "income_elasticity": 0.60},
-        {"country": "Kenya", "food_group": 5, "income_elasticity": 0.75},
-        {"country": "Kenya", "food_group": 6, "income_elasticity": 0.85},
-        {"country": "Kenya", "food_group": 7, "income_elasticity": 0.80},
-        {"country": "Kenya", "food_group": 8, "income_elasticity": 0.78},
-        {"country": "Kenya", "food_group": 9, "income_elasticity": 0.55},
-        {"country": "Brazil", "food_group": 1, "income_elasticity": 0.15},
-        {"country": "Brazil", "food_group": 2, "income_elasticity": 0.10},
-        {"country": "Brazil", "food_group": 3, "income_elasticity": 0.25},
-        {"country": "Brazil", "food_group": 4, "income_elasticity": 0.40},
-        {"country": "Brazil", "food_group": 5, "income_elasticity": 0.50},
-        {"country": "Brazil", "food_group": 6, "income_elasticity": 0.55},
-        {"country": "Brazil", "food_group": 7, "income_elasticity": 0.50},
-        {"country": "Brazil", "food_group": 8, "income_elasticity": 0.45},
-        {"country": "Brazil", "food_group": 9, "income_elasticity": 0.30},
-        {"country": "United States", "food_group": 1, "income_elasticity": 0.02},
-        {"country": "United States", "food_group": 2, "income_elasticity": 0.01},
-        {"country": "United States", "food_group": 3, "income_elasticity": 0.08},
-        {"country": "United States", "food_group": 4, "income_elasticity": 0.15},
-        {"country": "United States", "food_group": 5, "income_elasticity": 0.18},
-        {"country": "United States", "food_group": 6, "income_elasticity": 0.20},
-        {"country": "United States", "food_group": 7, "income_elasticity": 0.22},
-        {"country": "United States", "food_group": 8, "income_elasticity": 0.15},
-        {"country": "United States", "food_group": 9, "income_elasticity": 0.05},
-    ]
-    return pd.DataFrame(sample_ifpri)
+def load_ifpri_data(df_merged):
+    """Generates food subgroup income elasticities for ALL countries in the dataset
+
+    using Bennett's Law relative scaling principles.
+    """
+    group_multipliers = {
+        1: 0.50,  # Cereals & Staples
+        2: 0.40,  # Roots & Tubers
+        3: 0.70,  # Pulses & Legumes
+        4: 0.95,  # Vegetables
+        5: 1.15,  # Fruits
+        6: 1.30,  # Meat & Poultry
+        7: 1.20,  # Fish & Seafood
+        8: 1.10,  # Milk & Dairy
+        9: 0.80,  # Fats, Oils & Sugars
+    }
+
+    records = []
+    for _, row in df_merged.iterrows():
+        country = row["country"]
+        base_e = float(row.get("income_elasticity_2005", 0.45))
+        for fg_id, mult in group_multipliers.items():
+            sub_e = round(max(0.01, base_e * mult), 2)
+            records.append(
+                {
+                    "country": country,
+                    "food_group": fg_id,
+                    "income_elasticity": sub_e,
+                }
+            )
+
+    return pd.DataFrame(records)
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
@@ -332,7 +333,7 @@ def build_bennett_trapezoid_figure(country_df, country_name):
 
 # Load Datasets
 df_2005 = load_merged_data()
-df_ifpri = load_ifpri_data()
+df_ifpri = load_ifpri_data(df_2005)
 
 # ==========================================
 # 3. APP HEADER & NAVIGATION
@@ -462,10 +463,15 @@ with tab1:
 with tab2:
     st.header("Commodity-Specific Demand Growth (Bennett's Law)")
     st.write(
-        "Explore how demand shifts across 9 distinct food categories using updated IFPRI elasticities."
+        "Explore how demand shifts across 9 distinct food categories using updated elasticities."
     )
 
     countries_ifpri = sorted(df_ifpri["country"].unique())
+    default_tab2_index = (
+        countries_ifpri.index("United States")
+        if "United States" in countries_ifpri
+        else 0
+    )
 
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
 
@@ -473,7 +479,7 @@ with tab2:
         selected_country_ifpri = st.selectbox(
             "Select Country / Region:",
             countries_ifpri,
-            index=0,
+            index=default_tab2_index,
             key="country_ifpri",
         )
 
@@ -578,13 +584,18 @@ with tab2:
                 if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
                 else "#000000"
             )
-            styles.append(f"background-color: {bg_color}; color: {text_color};")
+            styles.append(
+                f"background-color: {bg_color}; color: {text_color}; text-align: center;"
+            )
         return styles
 
     styled_df = (
         display_df.style
         .set_properties(**{"text-align": "center"})
-        .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}])
+        .set_table_styles([
+            {"selector": "th", "props": [("text-align", "center !important")]},
+            {"selector": "td", "props": [("text-align", "center !important")]}
+        ])
         .apply(highlight_food_category, subset=["Food Category"])
         .format(
             {
@@ -594,4 +605,15 @@ with tab2:
         )
     )
 
-    st.dataframe(styled_df, hide_index=True, use_container_width=False)
+    st.dataframe(
+        styled_df,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Food Category": st.column_config.TextColumn(alignment="center"),
+            "Income Elasticity of Demand for Subgroup": st.column_config.NumberColumn(
+                alignment="center", format="%.2f"
+            ),
+            "Total Growth (%)": st.column_config.TextColumn(alignment="center"),
+        },
+    )
