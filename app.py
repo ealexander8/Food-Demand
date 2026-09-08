@@ -436,6 +436,67 @@ with tab1:
 
     st.plotly_chart(fig_proj, use_container_width=True)
 
+    # --- SIDE-BY-SIDE PIE CHARTS (BASELINE VS DOUBLED INCOME) ---
+    st.markdown("---")
+    st.subheader(
+        f"Budget Allocation Breakdown: Baseline vs. Doubled Income (+100%) for {selected_country_all}"
+    )
+
+    df_current_pie = pd.DataFrame([
+        {"Good Category": BROAD_GOODS_CODE_TO_FRIENDLY[k], "Share (%)": v * 100.0}
+        for k, v in base_shares_all.items()
+    ])
+
+    doubled_pie_records = []
+    for k, base_s in base_shares_all.items():
+        e_val = float(country_row_all[k])
+        doubled_share = base_s * (1.0 + e_val * 1.0) / (1.0 + 1.0)
+        doubled_pie_records.append({
+            "Good Category": BROAD_GOODS_CODE_TO_FRIENDLY[k],
+            "Share (%)": doubled_share * 100.0,
+        })
+    df_doubled_pie = pd.DataFrame(doubled_pie_records)
+
+    pie_col1, pie_col2 = st.columns(2)
+
+    with pie_col1:
+        fig_pie_current = px.pie(
+            df_current_pie,
+            values="Share (%)",
+            names="Good Category",
+            title="Current / Baseline Allocation",
+            color="Good Category",
+            color_discrete_map=BROAD_GOOD_COLOR_MAP,
+        )
+        fig_pie_current.update_traces(
+            textposition="inside", textinfo="percent+label"
+        )
+        fig_pie_current.update_layout(
+            height=450,
+            showlegend=False,
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
+        st.plotly_chart(fig_pie_current, use_container_width=True)
+
+    with pie_col2:
+        fig_pie_doubled = px.pie(
+            df_doubled_pie,
+            values="Share (%)",
+            names="Good Category",
+            title="Allocation if Income Doubled (+100%)",
+            color="Good Category",
+            color_discrete_map=BROAD_GOOD_COLOR_MAP,
+        )
+        fig_pie_doubled.update_traces(
+            textposition="inside", textinfo="percent+label"
+        )
+        fig_pie_doubled.update_layout(
+            height=450,
+            showlegend=False,
+            margin=dict(l=20, r=20, t=40, b=20),
+        )
+        st.plotly_chart(fig_pie_doubled, use_container_width=True)
+
 
 # ==========================================
 # TAB 2: BENNETT'S LAW: FOOD SUBGROUPS
