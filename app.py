@@ -363,6 +363,37 @@ with tab1:
         )
 
     with col2:
+        st.subheader(f"Growth Drivers Breakdown ({selected_country_2005})")
+
+        driver_df = pd.DataFrame(
+            {
+                "Driver": ["Population Growth", "Income Growth"],
+                "Growth_Rate": [max(0.0, pop_contrib), max(0.0, inc_contrib)],
+            }
+        )
+
+        fig_driver = px.pie(
+            driver_df,
+            values="Growth_Rate",
+            names="Driver",
+            hole=0.4,
+            color="Driver",
+            color_discrete_map={
+                "Population Growth": "#2b5c8f",
+                "Income Growth": "#46a040",
+            },
+        )
+        fig_driver.update_traces(
+            textinfo="percent+label",
+            hovertemplate="%{label}: %{value:.2f}% points",
+        )
+        fig_driver.update_layout(
+            showlegend=False,
+            height=280,
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        st.plotly_chart(fig_driver, use_container_width=True)
+
         st.subheader("Baseline Food Share Breakdown")
         fig_pie = px.pie(
             df_pie,
@@ -373,7 +404,7 @@ with tab1:
         )
         fig_pie.update_traces(textinfo="percent+label")
         fig_pie.update_layout(
-            showlegend=False, height=350, margin=dict(l=10, r=10, t=30, b=10)
+            showlegend=False, height=280, margin=dict(l=10, r=10, t=20, b=10)
         )
         st.plotly_chart(fig_pie, use_container_width=True)
 
