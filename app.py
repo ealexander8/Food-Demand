@@ -71,8 +71,46 @@ def fetch_latest_world_bank_indicators():
 
 @st.cache_data
 def load_usda_elasticities():
-    """USDA 2005 Baseline Income Elasticities for 100+ countries."""
+    """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx."""
+    try:
+        df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
+
+        # Clean column names for resilient lookup
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        country_col = next(
+            (c for c in df.columns if "country" in c or "name" in c),
+            df.columns[0],
+        )
+        elasticity_col = next(
+            (
+                c
+                for c in df.columns
+                if "elasticity" in c or "income" in c or "ey" in c or "food" in c
+            ),
+            df.columns[1],
+        )
+
+        df_cleaned = df.rename(
+            columns={
+                country_col: "country",
+                elasticity_col: "income_elasticity_2005",
+            }
+        )
+        df_cleaned["country"] = df_cleaned["country"].astype(str).str.strip()
+        df_cleaned["income_elasticity_2005"] = pd.to_numeric(
+            df_cleaned["income_elasticity_2005"], errors="coerce"
+        )
+
+        df_result = df_cleaned[["country", "income_elasticity_2005"]].dropna()
+        if not df_result.empty:
+            return df_result
+    except Exception as e:
+        st.info(f"Using default elasticity fallback: {e}")
+
+    # Fallback dataset with updated US income elasticity (0.346)
     usda_base = [
+        {"country": "United States", "income_elasticity_2005": 0.346},
         {"country": "Afghanistan", "income_elasticity_2005": 0.78},
         {"country": "Albania", "income_elasticity_2005": 0.48},
         {"country": "Algeria", "income_elasticity_2005": 0.45},
@@ -87,113 +125,43 @@ def load_usda_elasticities():
         {"country": "Belgium", "income_elasticity_2005": 0.11},
         {"country": "Benin", "income_elasticity_2005": 0.74},
         {"country": "Bolivia", "income_elasticity_2005": 0.52},
-        {"country": "Bosnia and Herzegovina", "income_elasticity_2005": 0.41},
         {"country": "Brazil", "income_elasticity_2005": 0.35},
-        {"country": "Bulgaria", "income_elasticity_2005": 0.36},
-        {"country": "Burkina Faso", "income_elasticity_2005": 0.76},
-        {"country": "Burundi", "income_elasticity_2005": 0.80},
-        {"country": "Cambodia", "income_elasticity_2005": 0.71},
-        {"country": "Cameroon", "income_elasticity_2005": 0.68},
         {"country": "Canada", "income_elasticity_2005": 0.10},
-        {"country": "Central African Republic", "income_elasticity_2005": 0.79},
-        {"country": "Chad", "income_elasticity_2005": 0.78},
         {"country": "Chile", "income_elasticity_2005": 0.24},
         {"country": "China", "income_elasticity_2005": 0.42},
         {"country": "Colombia", "income_elasticity_2005": 0.38},
-        {"country": "Congo, Dem. Rep.", "income_elasticity_2005": 0.81},
-        {"country": "Costa Rica", "income_elasticity_2005": 0.33},
-        {"country": "Croatia", "income_elasticity_2005": 0.28},
-        {"country": "Cyprus", "income_elasticity_2005": 0.20},
-        {"country": "Czechia", "income_elasticity_2005": 0.22},
-        {"country": "Denmark", "income_elasticity_2005": 0.10},
-        {"country": "Dominican Republic", "income_elasticity_2005": 0.42},
-        {"country": "Ecuador", "income_elasticity_2005": 0.45},
         {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50},
-        {"country": "El Salvador", "income_elasticity_2005": 0.48},
-        {"country": "Estonia", "income_elasticity_2005": 0.25},
         {"country": "Ethiopia", "income_elasticity_2005": 0.77},
-        {"country": "Finland", "income_elasticity_2005": 0.11},
         {"country": "France", "income_elasticity_2005": 0.11},
-        {"country": "Gambia, The", "income_elasticity_2005": 0.73},
-        {"country": "Georgia", "income_elasticity_2005": 0.47},
         {"country": "Germany", "income_elasticity_2005": 0.10},
         {"country": "Ghana", "income_elasticity_2005": 0.65},
-        {"country": "Greece", "income_elasticity_2005": 0.18},
-        {"country": "Guatemala", "income_elasticity_2005": 0.52},
-        {"country": "Guinea", "income_elasticity_2005": 0.75},
-        {"country": "Haiti", "income_elasticity_2005": 0.74},
-        {"country": "Honduras", "income_elasticity_2005": 0.54},
-        {"country": "Hungary", "income_elasticity_2005": 0.24},
         {"country": "India", "income_elasticity_2005": 0.62},
         {"country": "Indonesia", "income_elasticity_2005": 0.48},
-        {"country": "Iran, Islamic Rep.", "income_elasticity_2005": 0.39},
-        {"country": "Iraq", "income_elasticity_2005": 0.46},
-        {"country": "Ireland", "income_elasticity_2005": 0.11},
-        {"country": "Israel", "income_elasticity_2005": 0.16},
         {"country": "Italy", "income_elasticity_2005": 0.13},
-        {"country": "Jamaica", "income_elasticity_2005": 0.40},
         {"country": "Japan", "income_elasticity_2005": 0.12},
-        {"country": "Jordan", "income_elasticity_2005": 0.41},
-        {"country": "Kazakhstan", "income_elasticity_2005": 0.37},
         {"country": "Kenya", "income_elasticity_2005": 0.68},
-        {"country": "Korea, Rep.", "income_elasticity_2005": 0.18},
-        {"country": "Kuwait", "income_elasticity_2005": 0.18},
-        {"country": "Latvia", "income_elasticity_2005": 0.26},
-        {"country": "Lebanon", "income_elasticity_2005": 0.35},
-        {"country": "Lithuania", "income_elasticity_2005": 0.26},
-        {"country": "Madagascar", "income_elasticity_2005": 0.76},
-        {"country": "Malawi", "income_elasticity_2005": 0.79},
-        {"country": "Malaysia", "income_elasticity_2005": 0.28},
-        {"country": "Mali", "income_elasticity_2005": 0.75},
         {"country": "Mexico", "income_elasticity_2005": 0.31},
-        {"country": "Morocco", "income_elasticity_2005": 0.46},
-        {"country": "Mozambique", "income_elasticity_2005": 0.78},
-        {"country": "Nepal", "income_elasticity_2005": 0.73},
-        {"country": "Netherlands", "income_elasticity_2005": 0.10},
-        {"country": "New Zealand", "income_elasticity_2005": 0.12},
-        {"country": "Niger", "income_elasticity_2005": 0.79},
         {"country": "Nigeria", "income_elasticity_2005": 0.67},
-        {"country": "Norway", "income_elasticity_2005": 0.09},
         {"country": "Pakistan", "income_elasticity_2005": 0.64},
         {"country": "Peru", "income_elasticity_2005": 0.41},
         {"country": "Philippines", "income_elasticity_2005": 0.49},
         {"country": "Poland", "income_elasticity_2005": 0.25},
-        {"country": "Portugal", "income_elasticity_2005": 0.18},
-        {"country": "Romania", "income_elasticity_2005": 0.35},
         {"country": "Russian Federation", "income_elasticity_2005": 0.33},
-        {"country": "Rwanda", "income_elasticity_2005": 0.77},
         {"country": "Saudi Arabia", "income_elasticity_2005": 0.22},
-        {"country": "Senegal", "income_elasticity_2005": 0.70},
-        {"country": "Sierra Leone", "income_elasticity_2005": 0.78},
-        {"country": "Singapore", "income_elasticity_2005": 0.12},
-        {"country": "Slovak Republic", "income_elasticity_2005": 0.23},
-        {"country": "Slovenia", "income_elasticity_2005": 0.19},
         {"country": "South Africa", "income_elasticity_2005": 0.38},
         {"country": "Spain", "income_elasticity_2005": 0.14},
-        {"country": "Sri Lanka", "income_elasticity_2005": 0.48},
-        {"country": "Sweden", "income_elasticity_2005": 0.10},
-        {"country": "Switzerland", "income_elasticity_2005": 0.08},
         {"country": "Tanzania", "income_elasticity_2005": 0.75},
         {"country": "Thailand", "income_elasticity_2005": 0.36},
-        {"country": "Tunisia", "income_elasticity_2005": 0.42},
         {"country": "Turkiye", "income_elasticity_2005": 0.34},
-        {"country": "Uganda", "income_elasticity_2005": 0.76},
-        {"country": "Ukraine", "income_elasticity_2005": 0.40},
-        {"country": "United Arab Emirates", "income_elasticity_2005": 0.15},
         {"country": "United Kingdom", "income_elasticity_2005": 0.10},
-        {"country": "United States", "income_elasticity_2005": 0.08},
-        {"country": "Uruguay", "income_elasticity_2005": 0.25},
-        {"country": "Uzbekistan", "income_elasticity_2005": 0.51},
         {"country": "Viet Nam", "income_elasticity_2005": 0.58},
-        {"country": "Zambia", "income_elasticity_2005": 0.74},
-        {"country": "Zimbabwe", "income_elasticity_2005": 0.71},
     ]
     return pd.DataFrame(usda_base)
 
 
 @st.cache_data
 def load_merged_data():
-    """Merges the latest World Bank API indicators with 2005 USDA Elasticities."""
+    """Merges the latest World Bank API indicators with Excel Elasticities."""
     df_wb = fetch_latest_world_bank_indicators()
     df_usda = load_usda_elasticities()
 
@@ -260,122 +228,117 @@ st.markdown(
 )
 
 tab1, tab2 = st.tabs(
-    ["Overview (2005 Aggregate Data)", "Deep Dive: 9 Food Groups (Bennett's Law)"]
+    ["Overview (Aggregate Data)", "Deep Dive: 9 Food Groups (Bennett's Law)"]
 )
 
 
 # ==========================================
-# TAB 1: AGGREGATE MODEL (LATEST WORLD BANK API INDICATORS)
+# TAB 1: AGGREGATE MODEL
 # ==========================================
 with tab1:
     st.header("Aggregate Food Demand Growth")
     st.write(
-        "Select a country to combine 2005 USDA baseline food elasticities with the most recent reported World Bank population and GDP per-capita growth rates."
+        "Select a country to combine baseline food elasticities (from Cleaned_Table1_Food_Elasticity.xlsx) with the most recent reported World Bank population and GDP per-capita growth rates."
     )
 
-    col1, col2 = st.columns([1, 1])
+    countries_2005 = sorted(df_2005["country"].unique())
+    default_index = (
+        countries_2005.index("United States")
+        if "United States" in countries_2005
+        else 0
+    )
 
-    with col1:
-        countries_2005 = sorted(df_2005["country"].unique())
-        default_index = (
-            countries_2005.index("United States")
-            if "United States" in countries_2005
-            else 0
-        )
+    selected_country_2005 = st.selectbox(
+        "Select Country:",
+        countries_2005,
+        index=default_index,
+        key="country_2005",
+    )
 
-        selected_country_2005 = st.selectbox(
-            "Select Country (100+ Datasets Available):",
-            countries_2005,
-            index=default_index,
-            key="country_2005",
-        )
+    country_row = df_2005[df_2005["country"] == selected_country_2005].iloc[0]
+    e_y_2005 = float(country_row["income_elasticity_2005"])
+    pop_growth_recent = float(country_row["pop_growth"])
+    income_growth_recent = float(country_row["income_growth"])
+    pop_year = str(country_row.get("pop_year", "Recent"))
+    income_year = str(country_row.get("income_year", "Recent"))
 
-        country_row = df_2005[df_2005["country"] == selected_country_2005].iloc[
-            0
-        ]
-        e_y_2005 = float(country_row["income_elasticity_2005"])
-        pop_growth_recent = float(country_row["pop_growth"])
-        income_growth_recent = float(country_row["income_growth"])
-        pop_year = str(country_row.get("pop_year", "Recent"))
-        income_year = str(country_row.get("income_year", "Recent"))
+    pop_contrib = pop_growth_recent
+    inc_contrib = e_y_2005 * income_growth_recent
+    total_growth = pop_contrib + inc_contrib
 
-        pop_contrib = pop_growth_recent
-        inc_contrib = e_y_2005 * income_growth_recent
-        total_growth = pop_contrib + inc_contrib
+    st.markdown("---")
+    st.subheader(f"🌐 Indicators for {selected_country_2005}")
 
-        st.markdown("---")
-        st.subheader(f"🌐 Indicators for {selected_country_2005}")
+    m1, m2, m3 = st.columns(3)
+    m1.metric(
+        f"Pop. Growth ({pop_year})",
+        f"{pop_growth_recent:.2f}%",
+        help="Most recent annual population growth rate from World Bank API",
+    )
+    m2.metric(
+        f"GDP/Cap Growth ({income_year})",
+        f"{income_growth_recent:.2f}%",
+        help="Most recent annual per capita GDP growth rate from World Bank API",
+    )
+    m3.metric(
+        "Income Elasticity of Food Demand",
+        f"{e_y_2005:.3f}",
+        help="Loaded from Cleaned_Table1_Food_Elasticity.xlsx",
+    )
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric(
-            f"Pop. Growth ({pop_year})",
-            f"{pop_growth_recent:.2f}%",
-            help="Most recent annual population growth rate from World Bank API",
-        )
-        m2.metric(
-            f"GDP/Cap Growth ({income_year})",
-            f"{income_growth_recent:.2f}%",
-            help="Most recent annual per capita GDP growth rate from World Bank API",
-        )
-        m3.metric(
-            "Income Elasticity of Food Demand",
-            f"{e_y_2005:.2f}",
-            help="USDA 2005 baseline income elasticity of food demand",
-        )
+    st.markdown("---")
+    st.metric(
+        label=f"Projected Annual Food Demand Growth for {selected_country_2005}",
+        value=f"{total_growth:.2f}%",
+    )
 
-        st.markdown("---")
-        st.metric(
-            label=f"Projected Annual Food Demand Growth for {selected_country_2005}",
-            value=f"{total_growth:.2f}%",
-        )
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style="font-size: 1.15rem; line-height: 1.7; background-color: rgba(128, 128, 128, 0.08); padding: 16px; border-radius: 8px;">
+            <strong>Formula:</strong><br>
+            <span>Total Food Demand Growth = Population Growth + (Income Elasticity of Food Demand × Per Capita GDP Growth)</span>
+            <br><br>
+            <strong>Calculation:</strong><br>
+            <span style="font-size: 1.35rem; font-weight: bold; color: #0083B0;">
+                {total_growth:.2f}% = {pop_contrib:.2f}% + ({e_y_2005:.3f} × {income_growth_recent:.2f}%)
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        st.markdown("---")
-        st.markdown(
-            f"""
-            <div style="font-size: 1.15rem; line-height: 1.7; background-color: rgba(128, 128, 128, 0.08); padding: 16px; border-radius: 8px;">
-                <strong>Formula:</strong><br>
-                <span>Total Food Demand Growth = Population Growth + (Income Elasticity of Food Demand × Per Capita GDP Growth)</span>
-                <br><br>
-                <strong>Calculation:</strong><br>
-                <span style="font-size: 1.35rem; font-weight: bold; color: #0083B0;">
-                    {total_growth:.2f}% = {pop_contrib:.2f}% + ({e_y_2005:.2f} × {income_growth_recent:.2f}%)
-                </span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown("---")
+    st.subheader(f"Growth Drivers Breakdown ({selected_country_2005})")
 
-    with col2:
-        st.subheader(f"Growth Drivers Breakdown ({selected_country_2005})")
+    driver_df = pd.DataFrame(
+        {
+            "Driver": ["Population Growth", "Income Growth"],
+            "Growth_Rate": [max(0.0, pop_contrib), max(0.0, inc_contrib)],
+        }
+    )
 
-        driver_df = pd.DataFrame(
-            {
-                "Driver": ["Population Growth", "Income Growth"],
-                "Growth_Rate": [max(0.0, pop_contrib), max(0.0, inc_contrib)],
-            }
-        )
-
-        fig_driver = px.pie(
-            driver_df,
-            values="Growth_Rate",
-            names="Driver",
-            hole=0.4,
-            color="Driver",
-            color_discrete_map={
-                "Population Growth": "#2b5c8f",
-                "Income Growth": "#46a040",
-            },
-        )
-        fig_driver.update_traces(
-            textinfo="percent+label",
-            hovertemplate="%{label}: %{value:.2f}% points",
-        )
-        fig_driver.update_layout(
-            showlegend=False,
-            height=400,
-            margin=dict(l=10, r=10, t=30, b=10),
-        )
-        st.plotly_chart(fig_driver, use_container_width=True)
+    fig_driver = px.pie(
+        driver_df,
+        values="Growth_Rate",
+        names="Driver",
+        hole=0.4,
+        color="Driver",
+        color_discrete_map={
+            "Population Growth": "#2b5c8f",
+            "Income Growth": "#46a040",
+        },
+    )
+    fig_driver.update_traces(
+        textinfo="percent+label",
+        hovertemplate="%{label}: %{value:.2f}% points",
+    )
+    fig_driver.update_layout(
+        showlegend=False,
+        height=380,
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(fig_driver, use_container_width=True)
 
 
 # ==========================================
