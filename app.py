@@ -214,22 +214,6 @@ def load_merged_data():
 
 
 @st.cache_data
-def load_aggregate_pie_data():
-    return pd.DataFrame(
-        {
-            "Category": [
-                "Starchy Staples",
-                "Animal Proteins",
-                "Fruits & Vegetables",
-                "Fats & Sugars",
-                "Other Groceries",
-            ],
-            "Share_Percent": [40.0, 25.0, 20.0, 10.0, 5.0],
-        }
-    )
-
-
-@st.cache_data
 def load_ifpri_data():
     sample_ifpri = [
         {"country": "Kenya", "food_group": 1, "income_elasticity": 0.45},
@@ -265,7 +249,6 @@ def load_ifpri_data():
 
 # Load Datasets
 df_2005 = load_merged_data()
-df_pie = load_aggregate_pie_data()
 df_ifpri = load_ifpri_data()
 
 # ==========================================
@@ -389,24 +372,10 @@ with tab1:
         )
         fig_driver.update_layout(
             showlegend=False,
-            height=280,
-            margin=dict(l=10, r=10, t=20, b=10),
+            height=400,
+            margin=dict(l=10, r=10, t=30, b=10),
         )
         st.plotly_chart(fig_driver, use_container_width=True)
-
-        st.subheader("Baseline Food Share Breakdown")
-        fig_pie = px.pie(
-            df_pie,
-            values="Share_Percent",
-            names="Category",
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set2,
-        )
-        fig_pie.update_traces(textinfo="percent+label")
-        fig_pie.update_layout(
-            showlegend=False, height=280, margin=dict(l=10, r=10, t=20, b=10)
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
 
 
 # ==========================================
