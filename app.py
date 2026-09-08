@@ -1,5 +1,7 @@
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -213,6 +215,105 @@ def load_ifpri_data():
         {"country": "United States", "food_group": 9, "income_elasticity": 0.05},
     ]
     return pd.DataFrame(sample_ifpri)
+
+
+def build_bennett_trapezoid_figure(country_df, country_name):
+    """Builds a stacked polygon trapezoid diagram matching the classic Bennett's Law figure."""
+    y_levels = np.linspace(0, 100, 50)  # Living Standards / Income growth continuum
+
+    # Baseline volume share at low income
+    baseline_shares = {
+        1: 35.0,  # Cereals & Staples
+        2: 12.0,  # Roots & Tubers
+        3: 10.0,  # Plant Proteins / Pulses
+        4: 8.0,  # Vegetables
+        5: 6.0,  # Fruits
+        6: 10.0,  # Meat & Poultry
+        7: 5.0,  # Fish
+        8: 8.0,  # Milk & Dairy
+        9: 6.0,  # Fats, Oils & Sugars
+    }
+
+    # Left to right ordering mirroring the Bennett diagram layout:
+    # Vegetables -> Fruits -> Sugar/Oils -> Cereals -> Roots -> Plant Proteins -> Meat -> Fish -> Dairy
+    group_layout_order = [4, 5, 9, 1, 2, 3, 6, 7, 8]
+
+    # Map elasticities and calculate expanded quantities along living standard tiers
+    quantities = {}
+    for _, row in country_df.iterrows():
+        g_id = row["food_group"]
+        e_y = row["income_elasticity"]
+        base = baseline_shares.get(g_id, 8.0)
+        quantities[g_id] = [
+            max(0.5, base * (1.0 + e_y * (y / 50.0))) for y in y_levels
+        ]
+
+    available_groups = [
+        g for g in group_layout_order if g in country_df["food_group"].values
+    ]
+
+    # Cumulative boundary matrix for polygons
+    cum_x = np.zeros((len(available_groups) + 1, len(y_levels)))
+    for idx, g in enumerate(available_groups):
+        cum_x[idx + 1] = cum_x[idx] + np.array(quantities[g])
+
+    # Category colors matching standard dietary groups
+    color_map = {
+        4: "#2E7D32",  # Vegetables (Green)
+        5: "#81C784",  # Fruits (Light Green)
+        9: "#FBC02D",  # Sugar, Oils (Yellow)
+        1: "#D7CCC8",  # Cereals & Staples (Warm Grey/Tan)
+        2: "#BCAAA4",  # Roots (Brownish Grey)
+        3: "#8D6E63",  # Plant Proteins (Brown)
+        6: "#C62828",  # Meat & Poultry (Red)
+        7: "#0288D1",  # Fish (Blue)
+        8: "#7B1FA2",  # Milk & Dairy (Purple)
+    }
+
+    fig = go.Figure()
+
+    for idx, g in enumerate(available_groups):
+        g_name = FOOD_GROUP_MAP.get(g, f"Group {g}")
+        x_left = cum_x[idx]
+        x_right = cum_x[idx + 1]
+
+        # Enclose area boundaries
+        x_poly = np.concatenate([x_left, x_right[::-1]])
+        y_poly = np.concatenate([y_levels, y_levels[::-1]])
+
+        fig.add_trace(
+            go.Scatter(
+                x=x_poly,
+                y=y_poly,
+                fill="toself",
+                fillcolor=color_map.get(g, "#9E9E9E"),
+                line=dict(color="#1A1A1A", width=1.2),
+                name=g_name,
+                hovertemplate=f"<b>{g_name}</b><br>Living Standards Tier: %{{y:.0f}}%<extra></extra>",
+            )
+        )
+
+    fig.update_layout(
+        title=f"Bennett's Law Dietary Transition Trapezoid: {country_name}",
+        xaxis=dict(
+            title="<b>Quantity of Food Consumed (Volume / Calories)</b>",
+            showticklabels=False,
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title="<b>Living Standards / Income Level</b>",
+            ticksuffix="%",
+            range=[0, 100],
+        ),
+        height=520,
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5
+        ),
+        margin=dict(l=40, r=40, t=50, b=80),
+    )
+
+    return fig
 
 
 # Load Datasets
@@ -431,7 +532,15 @@ with tab2:
 
     st.plotly_chart(fig_bar, use_container_width=True)
 
+    # --- BENNETT'S LAW TRAPEZOID DIAGRAM ---
+    st.markdown("---")
+    fig_trapezoid = build_bennett_trapezoid_figure(
+        country_ifpri_df, selected_country_ifpri
+    )
+    st.plotly_chart(fig_trapezoid, use_container_width=True)
+
     # --- UNDERLYING DATA TABLE (ALWAYS DISPLAYED) ---
+    st.markdown("---")
     st.subheader("Underlying Data Table")
 
     display_df = (
@@ -448,7 +557,6 @@ with tab2:
         .set_index("Food Category")
     )
 
-    # Display dataframe with custom column configurations to fit column widths tightly
     st.dataframe(
         display_df,
         column_config={
