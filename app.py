@@ -218,10 +218,15 @@ def load_ifpri_data():
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds a stacked polygon trapezoid diagram matching the classic Bennett's Law figure."""
-    y_levels = np.linspace(0, 100, 50)  # Living Standards / Income growth continuum
+    """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top).
 
-    # Baseline volume share at low income
+    Sections are sorted from BIGGEST income elasticity on the left to
+    SMALLEST on the right.
+    """
+    # Y-axis levels: 0% increase (Current Income) up to 100% increase (+100% Income)
+    y_levels = np.linspace(0, 100, 50)
+
+    # Baseline quantity / consumption share at current income (bottom)
     baseline_shares = {
         1: 35.0,  # Cereals & Staples
         2: 12.0,  # Roots & Tubers
@@ -234,46 +239,50 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         9: 6.0,  # Fats, Oils & Sugars
     }
 
-    # Left to right ordering mirroring the Bennett diagram layout:
-    # Vegetables -> Fruits -> Sugar/Oils -> Cereals -> Roots -> Plant Proteins -> Meat -> Fish -> Dairy
-    group_layout_order = [4, 5, 9, 1, 2, 3, 6, 7, 8]
+    # Sort food categories from HIGHEST elasticity (left) to LOWEST elasticity (right)
+    country_df_sorted = country_df.sort_values(
+        by="income_elasticity", ascending=False
+    ).copy()
 
-    # Map elasticities and calculate expanded quantities along living standard tiers
+    available_groups = country_df_sorted["food_group"].tolist()
+
+    # Calculate quantity expansions across the income increase continuum
     quantities = {}
-    for _, row in country_df.iterrows():
-        g_id = row["food_group"]
-        e_y = row["income_elasticity"]
+    for _, row in country_df_sorted.iterrows():
+        g_id = int(row["food_group"])
+        e_y = float(row["income_elasticity"])
         base = baseline_shares.get(g_id, 8.0)
+        # Quantity grows proportional to income increase and elasticity
         quantities[g_id] = [
-            max(0.5, base * (1.0 + e_y * (y / 50.0))) for y in y_levels
+            max(0.1, base * (1.0 + e_y * (y / 100.0))) for y in y_levels
         ]
 
-    available_groups = [
-        g for g in group_layout_order if g in country_df["food_group"].values
-    ]
-
-    # Cumulative boundary matrix for polygons
+    # Cumulative boundary matrix for stacked trapezoid polygons
     cum_x = np.zeros((len(available_groups) + 1, len(y_levels)))
     for idx, g in enumerate(available_groups):
         cum_x[idx + 1] = cum_x[idx] + np.array(quantities[g])
 
-    # Category colors matching standard dietary groups
+    # Distinct category colors
     color_map = {
-        4: "#2E7D32",  # Vegetables (Green)
-        5: "#81C784",  # Fruits (Light Green)
-        9: "#FBC02D",  # Sugar, Oils (Yellow)
-        1: "#D7CCC8",  # Cereals & Staples (Warm Grey/Tan)
-        2: "#BCAAA4",  # Roots (Brownish Grey)
-        3: "#8D6E63",  # Plant Proteins (Brown)
-        6: "#C62828",  # Meat & Poultry (Red)
-        7: "#0288D1",  # Fish (Blue)
-        8: "#7B1FA2",  # Milk & Dairy (Purple)
+        1: "#D7CCC8",  # Cereals & Staples
+        2: "#BCAAA4",  # Roots
+        3: "#8D6E63",  # Plant Proteins
+        4: "#2E7D32",  # Vegetables
+        5: "#81C784",  # Fruits
+        6: "#C62828",  # Meat & Poultry
+        7: "#0288D1",  # Fish
+        8: "#7B1FA2",  # Milk & Dairy
+        9: "#FBC02D",  # Sugar, Oils
     }
 
     fig = go.Figure()
 
     for idx, g in enumerate(available_groups):
         g_name = FOOD_GROUP_MAP.get(g, f"Group {g}")
+        e_val = country_df_sorted.loc[
+            country_df_sorted["food_group"] == g, "income_elasticity"
+        ].values[0]
+
         x_left = cum_x[idx]
         x_right = cum_x[idx + 1]
 
@@ -288,29 +297,40 @@ def build_bennett_trapezoid_figure(country_df, country_name):
                 fill="toself",
                 fillcolor=color_map.get(g, "#9E9E9E"),
                 line=dict(color="#1A1A1A", width=1.2),
-                name=g_name,
-                hovertemplate=f"<b>{g_name}</b><br>Living Standards Tier: %{{y:.0f}}%<extra></extra>",
+                name=f"{g_name} (e = {e_val:.2f})",
+                hovertemplate=(
+                    f"<b>{g_name}</b><br>Elasticity: {e_val:.2f}<br>Income"
+                    " Increase: %{y:.0f}%<extra></extra>"
+                ),
             )
         )
 
     fig.update_layout(
-        title=f"Bennett's Law Dietary Transition Trapezoid: {country_name}",
+        title=f"Dietary Transition Trapezoid for {country_name} (Current Income → +100% Income Increase)",
         xaxis=dict(
-            title="<b>Quantity of Food Consumed (Volume / Calories)</b>",
+            title="<b>Quantity of Food Consumed (Volume / Share)</b>",
             showticklabels=False,
             zeroline=False,
         ),
         yaxis=dict(
-            title="<b>Living Standards / Income Level</b>",
-            ticksuffix="%",
+            title="<b>Income Level</b>",
+            tickmode="array",
+            tickvals=[0, 25, 50, 75, 100],
+            ticktext=[
+                "Current Income",
+                "+25%",
+                "+50%",
+                "+75%",
+                "+100% Income",
+            ],
             range=[0, 100],
         ),
-        height=520,
+        height=540,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5
+            orientation="h", yanchor="bottom", y=-0.38, xanchor="center", x=0.5
         ),
-        margin=dict(l=40, r=40, t=50, b=80),
+        margin=dict(l=40, r=40, t=50, b=90),
     )
 
     return fig
