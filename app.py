@@ -1,8 +1,9 @@
+import os
+import re
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import re
 import requests
 import streamlit as st
 
@@ -117,9 +118,15 @@ def fetch_latest_world_bank_indicators():
 
 @st.cache_data
 def load_full_elasticity_dataset():
-    """Reads 'Table1 (2).xls' directly and cleans footnote letters on the fly."""
+    """Reads 'Table1 (2).xlsx' (or 'Table1 (2).xls') directly and cleans footnote letters on the fly."""
     try:
-        df = pd.read_excel("Table1 (2).xls", header=1)
+        # Checks for .xlsx first to avoid requiring xlrd
+        file_path = (
+            "Table1 (2).xlsx"
+            if os.path.exists("Table1 (2).xlsx")
+            else "Table1 (2).xls"
+        )
+        df = pd.read_excel(file_path, header=1)
 
         def clean_val(x):
             if pd.isna(x):
@@ -159,7 +166,7 @@ def load_full_elasticity_dataset():
         return df_cleaned[columns_to_keep].dropna()
 
     except Exception as e:
-        st.error(f"Error loading 'Table1 (2).xls': {e}")
+        st.error(f"Error loading Excel file: {e}")
         return pd.DataFrame()
 
 
