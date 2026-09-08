@@ -77,7 +77,6 @@ def load_usda_elasticities():
     try:
         df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
 
-        # Clean column names for resilient lookup
         df.columns = [str(c).strip().lower() for c in df.columns]
 
         country_col = next(
@@ -110,7 +109,6 @@ def load_usda_elasticities():
     except Exception as e:
         st.info(f"Using default elasticity fallback: {e}")
 
-    # Fallback dataset with updated US income elasticity (0.346)
     usda_base = [
         {"country": "United States", "income_elasticity_2005": 0.346},
         {"country": "Afghanistan", "income_elasticity_2005": 0.78},
@@ -175,7 +173,6 @@ def load_merged_data():
         merged["income_year"] = merged["income_year"].fillna("Recent")
         return merged
 
-    # Fallback if API fails
     df_usda["pop_growth"] = 1.20
     df_usda["income_growth"] = 2.50
     df_usda["pop_year"] = "N/A"
@@ -221,7 +218,8 @@ def build_bennett_trapezoid_figure(country_df, country_name):
     """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top).
 
     Sections are sorted from BIGGEST income elasticity on the left to
-    SMALLEST on the right.
+    SMALLEST on the right. Both left and right outer sides are angled
+    outwards as income increases.
     """
     # Y-axis levels: 0% increase (Current Income) up to 100% increase (+100% Income)
     y_levels = np.linspace(0, 100, 50)
@@ -257,8 +255,17 @@ def build_bennett_trapezoid_figure(country_df, country_name):
             max(0.1, base * (1.0 + e_y * (y / 100.0))) for y in y_levels
         ]
 
+    # Calculate total expansion to angle both left and right sides symmetrically
+    bottom_total = sum([quantities[g][0] for g in available_groups])
+    top_total = sum([quantities[g][-1] for g in available_groups])
+    total_expansion = top_total - bottom_total
+    left_slant = total_expansion / 2.0
+
     # Cumulative boundary matrix for stacked trapezoid polygons
     cum_x = np.zeros((len(available_groups) + 1, len(y_levels)))
+    # Angle the left outer edge outwards to the left as income increases
+    cum_x[0] = -left_slant * (y_levels / 100.0)
+
     for idx, g in enumerate(available_groups):
         cum_x[idx + 1] = cum_x[idx] + np.array(quantities[g])
 
@@ -483,7 +490,6 @@ with tab2:
             key="country_ifpri",
         )
 
-    # Retrieve most recent World Bank indicators for selected country
     wb_match = df_2005[df_2005["country"] == selected_country_ifpri]
     if not wb_match.empty:
         group_pop_growth = float(wb_match.iloc[0]["pop_growth"])
@@ -559,7 +565,7 @@ with tab2:
     )
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
-    # --- UNDERLYING DATA TABLE (ALWAYS DISPLAYED) ---
+    # --- UNDERLYING DATA TABLE ---
     st.markdown("---")
     st.subheader("Underlying Data Table")
 
