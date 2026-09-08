@@ -433,8 +433,7 @@ with tab2:
 
     # --- UNDERLYING DATA TABLE (ALWAYS DISPLAYED) ---
     st.subheader("Underlying Data Table")
-    
-    # Selected remaining columns and set food category as index
+
     display_df = (
         country_ifpri_df.sort_values("food_group")[
             ["food_group_name", "income_elasticity", "annual_demand_growth"]
@@ -442,21 +441,27 @@ with tab2:
         .rename(
             columns={
                 "food_group_name": "Food Category",
-                "income_elasticity": "Income Elasticity of Demand\nfor Subgroup",
+                "income_elasticity": "Income Elasticity of Demand for Subgroup",
                 "annual_demand_growth": "Total Growth (%)",
             }
         )
         .set_index("Food Category")
     )
-    
-    st.dataframe(display_df, use_container_width=True)
 
-    # --- HOW TO INTERPRET BENNETT'S LAW (AT THE VERY BOTTOM) ---
-    st.markdown("---")
-    st.subheader("How to Interpret Bennett's Law")
-    st.markdown(
-        f"""
-        * **Starchy Staples (Group 1):** Low income elasticities keep growth closely bound to baseline population growth (**{group_pop_growth:.2f}%**).
-        * **High-Value Categories (Groups 5-8):** Proteins, dairy, and produce show high income elasticities. Income expansion (**{group_income_growth:.2f}%**) accelerates demand for these categories faster than baseline demographics alone.
-        """
+    # Display dataframe with custom column configurations to fit column widths tightly
+    st.dataframe(
+        display_df,
+        column_config={
+            "Income Elasticity of Demand for Subgroup": st.column_config.NumberColumn(
+                "Income Elasticity of Demand\nfor Subgroup",
+                format="%.2f",
+                width="small",
+            ),
+            "Total Growth (%)": st.column_config.NumberColumn(
+                "Total Growth (%)",
+                format="%.2f%%",
+                width="small",
+            ),
+        },
+        use_container_width=True,
     )
