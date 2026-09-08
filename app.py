@@ -6,7 +6,7 @@ import requests
 import streamlit as st
 
 # ==========================================
-# 1. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & GLOBAL COLOR MAPS
 # ==========================================
 st.set_page_config(
     page_title="Food Demand Growth Simulator", page_icon="🌾", layout="wide"
@@ -23,6 +23,20 @@ FOOD_GROUP_MAP = {
     8: "Milk & Dairy",
     9: "Fats, Oils & Sugars",
 }
+
+COLOR_MAP = {
+    1: "#D7CCC8",  # Cereals & Staples
+    2: "#BCAAA4",  # Roots
+    3: "#8D6E63",  # Plant Proteins
+    4: "#2E7D32",  # Vegetables
+    5: "#81C784",  # Fruits
+    6: "#C62828",  # Meat & Poultry
+    7: "#0288D1",  # Fish
+    8: "#7B1FA2",  # Milk & Dairy
+    9: "#FBC02D",  # Sugar, Oils
+}
+
+NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
 
 
 # ==========================================
@@ -215,16 +229,9 @@ def load_ifpri_data():
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top).
-
-    Sections are sorted from BIGGEST income elasticity on the left to
-    SMALLEST on the right. Both left and right outer sides are angled
-    outwards as income increases.
-    """
-    # Y-axis levels: 0% increase (Current Income) up to 100% increase (+100% Income)
+    """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top)."""
     y_levels = np.linspace(0, 100, 50)
 
-    # Baseline quantity / consumption share at current income (bottom)
     baseline_shares = {
         1: 35.0,  # Cereals & Staples
         2: 12.0,  # Roots & Tubers
@@ -237,50 +244,31 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         9: 6.0,  # Fats, Oils & Sugars
     }
 
-    # Sort food categories from HIGHEST elasticity (left) to LOWEST elasticity (right)
     country_df_sorted = country_df.sort_values(
         by="income_elasticity", ascending=False
     ).copy()
 
     available_groups = country_df_sorted["food_group"].tolist()
 
-    # Calculate quantity expansions across the income increase continuum
     quantities = {}
     for _, row in country_df_sorted.iterrows():
         g_id = int(row["food_group"])
         e_y = float(row["income_elasticity"])
         base = baseline_shares.get(g_id, 8.0)
-        # Quantity grows proportional to income increase and elasticity
         quantities[g_id] = [
             max(0.1, base * (1.0 + e_y * (y / 100.0))) for y in y_levels
         ]
 
-    # Calculate total expansion to angle both left and right sides symmetrically
     bottom_total = sum([quantities[g][0] for g in available_groups])
     top_total = sum([quantities[g][-1] for g in available_groups])
     total_expansion = top_total - bottom_total
     left_slant = total_expansion / 2.0
 
-    # Cumulative boundary matrix for stacked trapezoid polygons
     cum_x = np.zeros((len(available_groups) + 1, len(y_levels)))
-    # Angle the left outer edge outwards to the left as income increases
     cum_x[0] = -left_slant * (y_levels / 100.0)
 
     for idx, g in enumerate(available_groups):
         cum_x[idx + 1] = cum_x[idx] + np.array(quantities[g])
-
-    # Distinct category colors
-    color_map = {
-        1: "#D7CCC8",  # Cereals & Staples
-        2: "#BCAAA4",  # Roots
-        3: "#8D6E63",  # Plant Proteins
-        4: "#2E7D32",  # Vegetables
-        5: "#81C784",  # Fruits
-        6: "#C62828",  # Meat & Poultry
-        7: "#0288D1",  # Fish
-        8: "#7B1FA2",  # Milk & Dairy
-        9: "#FBC02D",  # Sugar, Oils
-    }
 
     fig = go.Figure()
 
@@ -293,7 +281,6 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         x_left = cum_x[idx]
         x_right = cum_x[idx + 1]
 
-        # Enclose area boundaries
         x_poly = np.concatenate([x_left, x_right[::-1]])
         y_poly = np.concatenate([y_levels, y_levels[::-1]])
 
@@ -302,7 +289,7 @@ def build_bennett_trapezoid_figure(country_df, country_name):
                 x=x_poly,
                 y=y_poly,
                 fill="toself",
-                fillcolor=color_map.get(g, "#9E9E9E"),
+                fillcolor=COLOR_MAP.get(g, "#9E9E9E"),
                 line=dict(color="#1A1A1A", width=1.2),
                 name=f"{g_name} (e = {e_val:.2f})",
                 hovertemplate=(
@@ -527,7 +514,7 @@ with tab2:
         country_ifpri_df["income_elasticity"] * group_income_growth
     )
 
-    # --- BAR CHART ---
+    # --- BAR CHART (COLORS MATCHED TO TRAPEZOID) ---
     country_ifpri_df_sorted = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
     )
@@ -543,8 +530,8 @@ with tab2:
             "annual_demand_growth": "Annual Demand Growth (%)",
             "food_group_name": "Food Group",
         },
-        color="annual_demand_growth",
-        color_continuous_scale="Viridis",
+        color="food_group_name",
+        color_discrete_map=NAME_COLOR_MAP,
     )
 
     fig_bar.update_traces(texttemplate="%{text:.2f}%", textposition="outside")
@@ -553,7 +540,7 @@ with tab2:
         height=500,
         xaxis_title="Predicted Annual Demand Growth (%)",
         yaxis_title="",
-        coloraxis_showscale=False,
+        showlegend=False,
     )
 
     st.plotly_chart(fig_bar, use_container_width=True)
@@ -565,12 +552,12 @@ with tab2:
     )
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
-    # --- UNDERLYING DATA TABLE ---
+    # --- INCOME ELASTICITIES TABLE (ROW COLORS MATCHED TO TRAPEZOID) ---
     st.markdown("---")
-    st.subheader("Underlying Data Table")
+    st.subheader("Income Elasticies")
 
     display_df = (
-        country_ifpri_df.sort_values("food_group")[
+        country_ifpri_df.sort_values("income_elasticity", ascending=False)[
             ["food_group_name", "income_elasticity", "annual_demand_growth"]
         ]
         .rename(
@@ -583,19 +570,21 @@ with tab2:
         .set_index("Food Category")
     )
 
-    st.dataframe(
-        display_df,
-        column_config={
-            "Income Elasticity of Demand for Subgroup": st.column_config.NumberColumn(
-                "Income Elasticity of Demand\nfor Subgroup",
-                format="%.2f",
-                width="small",
-            ),
-            "Total Growth (%)": st.column_config.NumberColumn(
-                "Total Growth (%)",
-                format="%.2f%%",
-                width="small",
-            ),
-        },
-        use_container_width=True,
+    def highlight_food_rows(row):
+        bg_color = NAME_COLOR_MAP.get(row.name, "#FFFFFF")
+        # Dark text for lighter background colors, white for dark ones
+        text_color = (
+            "#FFFFFF"
+            if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
+            else "#000000"
+        )
+        return [f"background-color: {bg_color}; color: {text_color}"] * len(row)
+
+    styled_df = display_df.style.apply(highlight_food_rows, axis=1).format(
+        {
+            "Income Elasticity of Demand for Subgroup": "{:.2f}",
+            "Total Growth (%)": "{:.2f}%",
+        }
     )
+
+    st.dataframe(styled_df, use_container_width=False)
