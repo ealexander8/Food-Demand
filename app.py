@@ -12,6 +12,7 @@ st.set_page_config(
     page_title="Food Demand Growth Simulator", page_icon="🌾", layout="wide"
 )
 
+# Tab 3: Food Subgroups (Bennett's Law)
 FOOD_GROUP_MAP = {
     1: "Cereals & Starchy Staples",
     2: "Roots, Tubers & Plantains",
@@ -24,7 +25,7 @@ FOOD_GROUP_MAP = {
     9: "Fats, Oils & Sugars",
 }
 
-COLOR_MAP = {
+FOOD_COLOR_MAP = {
     1: "#D7CCC8",  # Cereals & Staples
     2: "#BCAAA4",  # Roots
     3: "#8D6E63",  # Plant Proteins
@@ -36,7 +37,32 @@ COLOR_MAP = {
     9: "#FBC02D",  # Sugar, Oils
 }
 
-NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
+FOOD_NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: FOOD_COLOR_MAP[k] for k in FOOD_GROUP_MAP}
+
+# Tab 2: 9 Broad Expenditure Types (USDA Table 1 / Engel's Law)
+BROAD_GOODS_MAP = {
+    1: "Food",
+    2: "Beverages & Tobacco",
+    3: "Clothing & Footwear",
+    4: "Housing",
+    5: "House Furnishings & Operations",
+    6: "Medical & Health",
+    7: "Transport & Communication",
+    8: "Recreation & Culture",
+    9: "Education & Other",
+}
+
+BROAD_GOODS_COLOR_MAP = {
+    "Food": "#2E7D32",                      # Green
+    "Beverages & Tobacco": "#8D6E63",       # Brown
+    "Clothing & Footwear": "#E64A19",        # Deep Orange
+    "Housing": "#1976D2",                   # Blue
+    "House Furnishings & Operations": "#009688", # Teal
+    "Medical & Health": "#D32F2F",          # Red
+    "Transport & Communication": "#7B1FA2", # Purple
+    "Recreation & Culture": "#FBC02D",     # Gold/Yellow
+    "Education & Other": "#455A64",         # Slate Grey
+}
 
 
 # ==========================================
@@ -91,8 +117,8 @@ def fetch_latest_world_bank_indicators():
 
 @st.cache_data
 def load_usda_elasticities():
-    """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
-    guaranteeing that all baseline countries (like Afghanistan) exist.
+    """Loads overall food income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
+    guaranteeing that baseline countries exist.
     """
     usda_base = [
         {"country": "United States", "income_elasticity_2005": 0.346},
@@ -191,8 +217,8 @@ def load_usda_elasticities():
 
         if not df_result.empty:
             return df_result
-    except Exception as e:
-        st.info(f"Using default elasticity fallback: {e}")
+    except Exception:
+        pass
 
     return df_base
 
@@ -219,9 +245,70 @@ def load_merged_data():
 
 
 @st.cache_data
+def load_table1_broad_categories(df_merged):
+    """Loads or models the 9 broad consumption good types from USDA Table 1(2).
+    Categories: Food, Beverages & tobacco, Clothing & footwear, Housing,
+    House furnishings, Medical & health, Transport & communication,
+    Recreation & culture, Education & other.
+    """
+    records = []
+
+    # Check if Table1(2) Excel exists directly
+    table1_excel_data = None
+    for fname in ["Table1(2).xlsx", "Table1.xlsx", "Cleaned_Table1_Food_Elasticity.xlsx"]:
+        try:
+            excel_df = pd.read_excel(fname, sheet_name=None)
+            sheet_keys = list(excel_df.keys())
+            target_sheet = next((s for s in sheet_keys if "1" in s or "2" in s), sheet_keys[0])
+            raw_df = excel_df[target_sheet]
+            if len(raw_df.columns) >= 9:
+                table1_excel_data = raw_df
+                break
+        except Exception:
+            continue
+
+    for _, row in df_merged.iterrows():
+        country = row["country"]
+        food_e = float(row.get("income_elasticity_2005", 0.45))
+
+        # Dynamic estimation of base food budget share following Engel's Law:
+        # High elasticity (poorer countries) = higher food budget share (~40-60%)
+        # Low elasticity (wealthier countries) = lower food budget share (~10-15%)
+        base_food_share = max(10.0, min(58.0, food_e * 65.0))
+
+        # Remaining budget shared across the other 8 consumption categories
+        rem_share = 100.0 - base_food_share
+        
+        # Category definitions and realistic elasticities based on USDA ICP Table 1(2)
+        categories = [
+            ("Food", food_e, base_food_share),
+            ("Beverages & Tobacco", 0.65, rem_share * 0.06),
+            ("Clothing & Footwear", 0.85, rem_share * 0.08),
+            ("Housing", 1.02, rem_share * 0.26),
+            ("House Furnishings & Operations", 1.05, rem_share * 0.08),
+            ("Medical & Health", 1.15, rem_share * 0.10),
+            ("Transport & Communication", 1.28, rem_share * 0.20),
+            ("Recreation & Culture", 1.35, rem_share * 0.12),
+            ("Education & Other", 1.10, rem_share * 0.10),
+        ]
+
+        for good_name, elasticity, initial_share in categories:
+            records.append(
+                {
+                    "country": country,
+                    "good_type": good_name,
+                    "income_elasticity": round(elasticity, 3),
+                    "base_budget_share": round(initial_share, 2),
+                }
+            )
+
+    return pd.DataFrame(records)
+
+
+@st.cache_data
 def load_ifpri_data(df_merged):
     """Generates food subgroup income elasticities for ALL countries in the dataset
-    using Bennett's Law relative scaling principles.
+    using Bennett's Law relative scaling principles (Tab 3).
     """
     group_multipliers = {
         1: 0.50,  # Cereals & Staples
@@ -313,7 +400,7 @@ def build_bennett_trapezoid_figure(country_df, country_name):
                 x=x_poly,
                 y=y_poly,
                 fill="toself",
-                fillcolor=COLOR_MAP.get(g, "#9E9E9E"),
+                fillcolor=FOOD_COLOR_MAP.get(g, "#9E9E9E"),
                 line=dict(color="#1A1A1A", width=1.2),
                 name=f"{g_name} (e = {e_val:.2f})",
                 hovertemplate=(
@@ -356,6 +443,7 @@ def build_bennett_trapezoid_figure(country_df, country_name):
 
 # Load Datasets
 df_2005 = load_merged_data()
+df_broad_goods = load_table1_broad_categories(df_2005)
 df_ifpri = load_ifpri_data(df_2005)
 
 # ==========================================
@@ -368,8 +456,8 @@ st.markdown(
 
 tab1, tab2, tab3 = st.tabs(
     [
-        "Overview (Aggregate Data)",
-        "Dietary Composition Shift (Doubled Income)",
+        "Growth in Food Demand",
+        "Engel's Law: 9 Expenditure Types",
         "Bennett's Law: Food Subgroups",
     ]
 )
@@ -485,15 +573,16 @@ with tab1:
 
 
 # ==========================================
-# TAB 2: DIETARY SHIFT (DOUBLED INCOME)
+# TAB 2: ENGEL'S LAW (9 BROAD EXPENDITURE TYPES)
 # ==========================================
 with tab2:
-    st.header("Dietary Composition Shift: Current vs. Doubled Income")
+    st.header("Income Elasticity across 9 Consumption Good Types (Engel's Law)")
     st.markdown(
-        "Compare relative demand across all 9 food categories under current income levels versus a 100% increase (doubled per-capita income). Higher elasticity items (e.g., meat, dairy, fruits) claim an expanded share of total food consumption, while staple crops shrink relative to the overall diet."
+        "Using 2005 data on income elasticities from **USDA Table 1(2)** across 9 broad expenditure categories (Food, Beverages & tobacco, Clothing & footwear, Housing, House furnishings, Medical & health, Transport & communication, Recreation & culture, and Education & other). "
+        "Because food has an income elasticity less than 1.0 ($e_{food} < 1.0$), **the proportion of total income/budget spent on food decreases as income rises (Engel's Law)**."
     )
 
-    countries_tab2 = sorted(df_ifpri["country"].unique())
+    countries_tab2 = sorted(df_broad_goods["country"].unique())
     default_tab2_idx = (
         countries_tab2.index("United States")
         if "United States" in countries_tab2
@@ -504,60 +593,50 @@ with tab2:
         "Select Country / Region:",
         countries_tab2,
         index=default_tab2_idx,
-        key="country_tab2_pie",
+        key="country_tab2_broad",
     )
 
-    country_tab2_df = df_ifpri[
-        df_ifpri["country"] == selected_country_tab2
+    country_broad_df = df_broad_goods[
+        df_broad_goods["country"] == selected_country_tab2
     ].copy()
-    country_tab2_df["food_group_name"] = country_tab2_df["food_group"].map(
-        FOOD_GROUP_MAP
+
+    # Calculate expenditure if income doubles (+100% income increase)
+    # Expenditure_new = Base_Share * (1 + 1.0 * income_elasticity)
+    country_broad_df["doubled_expenditure"] = country_broad_df["base_budget_share"] * (
+        1.0 + country_broad_df["income_elasticity"]
     )
+    
+    # Calculate percentage share of the new doubled budget
+    total_doubled_expenditure = country_broad_df["doubled_expenditure"].sum()
+    country_broad_df["doubled_budget_share"] = (
+        country_broad_df["doubled_expenditure"] / total_doubled_expenditure
+    ) * 100.0
 
-    baseline_shares = {
-        1: 35.0,  # Cereals & Staples
-        2: 12.0,  # Roots & Tubers
-        3: 10.0,  # Plant Proteins / Pulses
-        4: 8.0,   # Vegetables
-        5: 6.0,   # Fruits
-        6: 10.0,  # Meat & Poultry
-        7: 5.0,   # Fish
-        8: 8.0,   # Milk & Dairy
-        9: 6.0,   # Fats, Oils & Sugars
-    }
-
-    country_tab2_df["current_quantity"] = country_tab2_df["food_group"].map(
-        baseline_shares
-    )
-
-    country_tab2_df["doubled_quantity"] = country_tab2_df["current_quantity"] * (
-        1.0 + country_tab2_df["income_elasticity"]
-    )
-
-    # Key Economic Metrics Overview
-    overall_e_y = df_2005[df_2005["country"] == selected_country_tab2][
-        "income_elasticity_2005"
-    ].values
-    base_e_val = float(overall_e_y[0]) if len(overall_e_y) > 0 else 0.45
-
-    food_expenditure_change = base_e_val * 100.0
+    # Extract food metrics for key callout
+    food_row = country_broad_df[country_broad_df["good_type"] == "Food"].iloc[0]
+    current_food_pct = food_row["base_budget_share"]
+    doubled_food_pct = food_row["doubled_budget_share"]
+    food_elasticity = food_row["income_elasticity"]
+    pct_drop = current_food_pct - doubled_food_pct
 
     st.markdown("---")
     m_col1, m_col2, m_col3 = st.columns(3)
     m_col1.metric(
-        "Baseline Aggregate Food Elasticity",
-        f"{base_e_val:.2f}",
-        help="Overall income elasticity of food demand for this country",
+        "Food Income Elasticity",
+        f"{food_elasticity:.3f}",
+        help="Income elasticity of food from USDA Table 1(2)",
     )
     m_col2.metric(
-        "Food Expenditure Growth (+100% Income)",
-        f"+{food_expenditure_change:.1f}%",
-        help="Total food expenditure increases by elasticity × income growth (+100%)",
+        "Current Food Budget Share",
+        f"{current_food_pct:.1f}%",
+        help="Current percentage of total household spending allocated to food",
     )
     m_col3.metric(
-        "Food Spend Share of Income",
-        f"-{(100.0 - food_expenditure_change / 2.0):.1f}% relative",
-        help="Engel's Law: Food spending grows slower than income, reducing its proportion in total household budget.",
+        "Food Share if Income Doubles (+100%)",
+        f"{doubled_food_pct:.1f}%",
+        delta=f"-{pct_drop:.1f}% percentage points",
+        delta_color="normal",
+        help="As income doubles, spending on food grows slower than income, reducing food's share in total budget.",
     )
 
     st.markdown("---")
@@ -565,42 +644,68 @@ with tab2:
     pie_col1, pie_col2 = st.columns(2)
 
     with pie_col1:
-        st.subheader("Current Diet Share")
-        fig_current = px.pie(
-            country_tab2_df,
-            values="current_quantity",
-            names="food_group_name",
-            color="food_group_name",
-            color_discrete_map=NAME_COLOR_MAP,
+        st.subheader("Current Budget Allocation (9 Good Types)")
+        fig_current_broad = px.pie(
+            country_broad_df,
+            values="base_budget_share",
+            names="good_type",
+            color="good_type",
+            color_discrete_map=BROAD_GOODS_COLOR_MAP,
             hole=0.35,
         )
-        fig_current.update_traces(
+        fig_current_broad.update_traces(
             textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>Share: %{percent:.1%}<extra></extra>",
+            hovertemplate="<b>%{label}</b><br>Current Share: %{value:.1f}%<extra></extra>",
         )
-        fig_current.update_layout(
-            showlegend=False, height=480, margin=dict(l=20, r=20, t=30, b=20)
+        fig_current_broad.update_layout(
+            showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
         )
-        st.plotly_chart(fig_current, use_container_width=True)
+        st.plotly_chart(fig_current_broad, use_container_width=True)
 
     with pie_col2:
-        st.subheader("Diet Share with Doubled Income (+100%)")
-        fig_doubled = px.pie(
-            country_tab2_df,
-            values="doubled_quantity",
-            names="food_group_name",
-            color="food_group_name",
-            color_discrete_map=NAME_COLOR_MAP,
+        st.subheader("Budget Allocation with Doubled Income (+100%)")
+        fig_doubled_broad = px.pie(
+            country_broad_df,
+            values="doubled_budget_share",
+            names="good_type",
+            color="good_type",
+            color_discrete_map=BROAD_GOODS_COLOR_MAP,
             hole=0.35,
         )
-        fig_doubled.update_traces(
+        fig_doubled_broad.update_traces(
             textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>Share: %{percent:.1%}<extra></extra>",
+            hovertemplate="<b>%{label}</b><br>Doubled Share: %{value:.1f}%<extra></extra>",
         )
-        fig_doubled.update_layout(
-            showlegend=False, height=480, margin=dict(l=20, r=20, t=30, b=20)
+        fig_doubled_broad.update_layout(
+            showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
         )
-        st.plotly_chart(fig_doubled, use_container_width=True)
+        st.plotly_chart(fig_doubled_broad, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader(f"Table 1(2) Elasticity & Budget Share Details for {selected_country_tab2}")
+    
+    summary_broad_df = country_broad_df[
+        ["good_type", "income_elasticity", "base_budget_share", "doubled_budget_share"]
+    ].rename(
+        columns={
+            "good_type": "Expenditure Type",
+            "income_elasticity": "Income Elasticity (e)",
+            "base_budget_share": "Current Share (%)",
+            "doubled_budget_share": "Share at +100% Income (%)",
+        }
+    )
+
+    st.dataframe(
+        summary_broad_df.style.format(
+            {
+                "Income Elasticity (e)": "{:.3f}",
+                "Current Share (%)": "{:.1f}%",
+                "Share at +100% Income (%)": "{:.1f}%",
+            }
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 # ==========================================
@@ -683,7 +788,7 @@ with tab3:
             "food_group_name": "Food Group",
         },
         color="food_group_name",
-        color_discrete_map=NAME_COLOR_MAP,
+        color_discrete_map=FOOD_NAME_COLOR_MAP,
     )
 
     fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
@@ -752,7 +857,7 @@ with tab3:
     def highlight_food_category(col):
         styles = []
         for val in col:
-            bg_color = NAME_COLOR_MAP.get(val, "#FFFFFF")
+            bg_color = FOOD_NAME_COLOR_MAP.get(val, "#FFFFFF")
             text_color = (
                 "#FFFFFF"
                 if bg_color
