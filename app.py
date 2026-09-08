@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import os
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Expenditure Elasticities App", layout="wide")
@@ -13,12 +14,22 @@ def load_usda_data():
     Loads the USDA data from 2005.
     Strictly calls for 'Table1(2).xlsx'.
     """
+    file_name = "Table1(2).xlsx"
     try:
-        df = pd.read_excel("Table1(2).xlsx")
+        df = pd.read_excel(file_name)
+        return df
     except Exception as e:
+        # If it fails, let's grab the current directory and the files in it to help debug
+        current_dir = os.getcwd()
+        available_files = os.listdir(current_dir)
+        
         st.error(f"Could not load USDA data: {e}")
-        df = pd.DataFrame()
-    return df
+        st.info(f"**Debugging Info:**")
+        st.write(f"Python is currently looking in this folder: `{current_dir}`")
+        st.write(f"Here are the files Python currently sees in this folder:")
+        st.write(available_files)
+        
+        return pd.DataFrame()
 
 @st.cache_data
 def load_ifpri_data():
@@ -26,12 +37,13 @@ def load_ifpri_data():
     Loads the IFPRI data from the newly uploaded Excel file.
     Strictly calls for 'Predicted_Expenditure_Elasticities.xlsx'.
     """
+    file_name = "Predicted_Expenditure_Elasticities.xlsx"
     try:
-        df = pd.read_excel("Predicted_Expenditure_Elasticities.xlsx")
+        df = pd.read_excel(file_name)
+        return df
     except Exception as e:
         st.error(f"Could not load IFPRI data: {e}")
-        df = pd.DataFrame()
-    return df
+        return pd.DataFrame()
 
 # --- 2. Load the Datasets ---
 usda_df = load_usda_data()
@@ -56,7 +68,7 @@ with tab1:
         st.dataframe(usda_df, use_container_width=True)
         # Add your Tab 1 USDA visualizations here
     else:
-        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the exact same directory as your app.py file.")
+        st.warning("USDA data not found. Check the red error box above to see what files Python is actually detecting in your folder.")
 
 # --- TAB 2: USDA Deep Dive ---
 with tab2:
@@ -67,7 +79,7 @@ with tab2:
         st.dataframe(usda_df.head(15), use_container_width=True)
         # Add your Tab 2 USDA visualizations here
     else:
-        st.warning("USDA data not found. Please ensure 'Table1(2).xlsx' is in the exact same directory as your app.py file.")
+        st.warning("USDA data not found. Check the red error box above to see what files Python is actually detecting in your folder.")
 
 # --- TAB 3: IFPRI Data ---
 with tab3:
