@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import requests
 import streamlit as st
 
 # ==========================================
@@ -23,712 +24,187 @@ FOOD_GROUP_MAP = {
 
 
 # ==========================================
-# 2. DATA LOADERS (WITH WORLD BANK POPULATION & GDP GROWTH)
+# 2. LIVE WORLD BANK API & DATA LOADERS
 # ==========================================
-@st.cache_data
-def load_2005_aggregate_data():
-    """Loads 2005 USDA / World Bank aggregate food elasticity and demographic dataset.
+@st.cache_data(ttl=86400)
+def fetch_world_bank_indicators(year="2005"):
+    """Fetches Population Growth (SP.POP.GROW) and Per Capita GDP Growth
 
-    Attempts to read Cleaned_Table1_Food_Elasticity.csv first; falls back to an
-    embedded 100+ country dataset with World Bank population and income growth
-    rates.
+    (NY.GDP.PCAP.KD.ZG) directly from the World Bank REST API.
     """
-    try:
-        df = pd.read_csv("Cleaned_Table1_Food_Elasticity.csv")
-        required_cols = {"country", "income_elasticity_2005"}
-        if required_cols.issubset(df.columns):
-            if "pop_growth" not in df.columns:
-                df["pop_growth"] = 1.20
-            if "income_growth" not in df.columns:
-                df["income_growth"] = 2.50
-            return df
-    except FileNotFoundError:
-        pass
+    indicators = {
+        "SP.POP.GROW": "pop_growth",
+        "NY.GDP.PCAP.KD.ZG": "income_growth",
+    }
 
-    # Embedded World Bank 2005 country dataset with historical growth indicators
-    world_bank_2005_data = [
-        # Low Income
-        {
-            "country": "Afghanistan",
-            "income_elasticity_2005": 0.78,
-            "pop_growth": 2.70,
-            "income_growth": 3.10,
-        },
-        {
-            "country": "Angola",
-            "income_elasticity_2005": 0.75,
-            "pop_growth": 3.10,
-            "income_growth": 4.50,
-        },
-        {
-            "country": "Bangladesh",
-            "income_elasticity_2005": 0.72,
-            "pop_growth": 1.40,
-            "income_growth": 4.20,
-        },
-        {
-            "country": "Benin",
-            "income_elasticity_2005": 0.74,
-            "pop_growth": 2.80,
-            "income_growth": 1.90,
-        },
-        {
-            "country": "Burkina Faso",
-            "income_elasticity_2005": 0.76,
-            "pop_growth": 2.90,
-            "income_growth": 2.60,
-        },
-        {
-            "country": "Burundi",
-            "income_elasticity_2005": 0.80,
-            "pop_growth": 3.00,
-            "income_growth": 1.20,
-        },
-        {
-            "country": "Cambodia",
-            "income_elasticity_2005": 0.71,
-            "pop_growth": 1.60,
-            "income_growth": 6.80,
-        },
-        {
-            "country": "Cameroon",
-            "income_elasticity_2005": 0.68,
-            "pop_growth": 2.60,
-            "income_growth": 1.80,
-        },
-        {
-            "country": "Central African Rep.",
-            "income_elasticity_2005": 0.79,
-            "pop_growth": 2.10,
-            "income_growth": 1.10,
-        },
-        {
-            "country": "Chad",
-            "income_elasticity_2005": 0.78,
-            "pop_growth": 3.30,
-            "income_growth": 2.50,
-        },
-        {
-            "country": "DR Congo",
-            "income_elasticity_2005": 0.81,
-            "pop_growth": 3.20,
-            "income_growth": 1.50,
-        },
-        {
-            "country": "Ethiopia",
-            "income_elasticity_2005": 0.77,
-            "pop_growth": 2.80,
-            "income_growth": 5.40,
-        },
-        {
-            "country": "Gambia",
-            "income_elasticity_2005": 0.73,
-            "pop_growth": 2.90,
-            "income_growth": 1.70,
-        },
-        {
-            "country": "Ghana",
-            "income_elasticity_2005": 0.65,
-            "pop_growth": 2.40,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "Guinea",
-            "income_elasticity_2005": 0.75,
-            "pop_growth": 2.50,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "Haiti",
-            "income_elasticity_2005": 0.74,
-            "pop_growth": 1.50,
-            "income_growth": 0.80,
-        },
-        {
-            "country": "India",
-            "income_elasticity_2005": 0.62,
-            "pop_growth": 1.40,
-            "income_growth": 6.10,
-        },
-        {
-            "country": "Kenya",
-            "income_elasticity_2005": 0.68,
-            "pop_growth": 2.70,
-            "income_growth": 2.80,
-        },
-        {
-            "country": "Madagascar",
-            "income_elasticity_2005": 0.76,
-            "pop_growth": 2.80,
-            "income_growth": 1.90,
-        },
-        {
-            "country": "Malawi",
-            "income_elasticity_2005": 0.79,
-            "pop_growth": 2.70,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "Mali",
-            "income_elasticity_2005": 0.75,
-            "pop_growth": 3.10,
-            "income_growth": 2.30,
-        },
-        {
-            "country": "Mozambique",
-            "income_elasticity_2005": 0.78,
-            "pop_growth": 2.80,
-            "income_growth": 4.50,
-        },
-        {
-            "country": "Nepal",
-            "income_elasticity_2005": 0.73,
-            "pop_growth": 1.20,
-            "income_growth": 2.40,
-        },
-        {
-            "country": "Niger",
-            "income_elasticity_2005": 0.79,
-            "pop_growth": 3.70,
-            "income_growth": 2.10,
-        },
-        {
-            "country": "Nigeria",
-            "income_elasticity_2005": 0.67,
-            "pop_growth": 2.60,
-            "income_growth": 3.80,
-        },
-        {
-            "country": "Pakistan",
-            "income_elasticity_2005": 0.64,
-            "pop_growth": 2.10,
-            "income_growth": 3.10,
-        },
-        {
-            "country": "Rwanda",
-            "income_elasticity_2005": 0.77,
-            "pop_growth": 2.50,
-            "income_growth": 4.80,
-        },
-        {
-            "country": "Senegal",
-            "income_elasticity_2005": 0.70,
-            "pop_growth": 2.70,
-            "income_growth": 2.20,
-        },
-        {
-            "country": "Sierra Leone",
-            "income_elasticity_2005": 0.78,
-            "pop_growth": 2.30,
-            "income_growth": 3.50,
-        },
-        {
-            "country": "Tanzania",
-            "income_elasticity_2005": 0.75,
-            "pop_growth": 2.90,
-            "income_growth": 3.60,
-        },
-        {
-            "country": "Uganda",
-            "income_elasticity_2005": 0.76,
-            "pop_growth": 3.30,
-            "income_growth": 3.10,
-        },
-        {
-            "country": "Vietnam",
-            "income_elasticity_2005": 0.58,
-            "pop_growth": 1.00,
-            "income_growth": 5.90,
-        },
-        {
-            "country": "Zambia",
-            "income_elasticity_2005": 0.74,
-            "pop_growth": 2.80,
-            "income_growth": 2.70,
-        },
-        {
-            "country": "Zimbabwe",
-            "income_elasticity_2005": 0.71,
-            "pop_growth": 1.40,
-            "income_growth": -0.80,
-        },
-        # Middle Income
-        {
-            "country": "Albania",
-            "income_elasticity_2005": 0.48,
-            "pop_growth": -0.40,
-            "income_growth": 5.20,
-        },
-        {
-            "country": "Algeria",
-            "income_elasticity_2005": 0.45,
-            "pop_growth": 1.60,
-            "income_growth": 2.80,
-        },
-        {
-            "country": "Argentina",
-            "income_elasticity_2005": 0.32,
-            "pop_growth": 1.00,
-            "income_growth": 3.50,
-        },
-        {
-            "country": "Armenia",
-            "income_elasticity_2005": 0.46,
-            "pop_growth": -0.30,
-            "income_growth": 6.50,
-        },
-        {
-            "country": "Azerbaijan",
-            "income_elasticity_2005": 0.44,
-            "pop_growth": 1.10,
-            "income_growth": 8.20,
-        },
-        {
-            "country": "Belarus",
-            "income_elasticity_2005": 0.38,
-            "pop_growth": -0.40,
-            "income_growth": 6.10,
-        },
-        {
-            "country": "Bolivia",
-            "income_elasticity_2005": 0.52,
-            "pop_growth": 1.70,
-            "income_growth": 2.20,
-        },
-        {
-            "country": "Bosnia and Herzegovina",
-            "income_elasticity_2005": 0.41,
-            "pop_growth": -0.20,
-            "income_growth": 4.10,
-        },
-        {
-            "country": "Brazil",
-            "income_elasticity_2005": 0.35,
-            "pop_growth": 1.10,
-            "income_growth": 2.70,
-        },
-        {
-            "country": "Bulgaria",
-            "income_elasticity_2005": 0.36,
-            "pop_growth": -0.70,
-            "income_growth": 5.00,
-        },
-        {
-            "country": "China",
-            "income_elasticity_2005": 0.42,
-            "pop_growth": 0.60,
-            "income_growth": 8.50,
-        },
-        {
-            "country": "Colombia",
-            "income_elasticity_2005": 0.38,
-            "pop_growth": 1.30,
-            "income_growth": 2.90,
-        },
-        {
-            "country": "Costa Rica",
-            "income_elasticity_2005": 0.33,
-            "pop_growth": 1.40,
-            "income_growth": 3.10,
-        },
-        {
-            "country": "Dominican Rep.",
-            "income_elasticity_2005": 0.42,
-            "pop_growth": 1.40,
-            "income_growth": 3.80,
-        },
-        {
-            "country": "Ecuador",
-            "income_elasticity_2005": 0.45,
-            "pop_growth": 1.60,
-            "income_growth": 2.40,
-        },
-        {
-            "country": "Egypt",
-            "income_elasticity_2005": 0.50,
-            "pop_growth": 1.90,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "El Salvador",
-            "income_elasticity_2005": 0.48,
-            "pop_growth": 0.50,
-            "income_growth": 2.10,
-        },
-        {
-            "country": "Georgia",
-            "income_elasticity_2005": 0.47,
-            "pop_growth": -0.50,
-            "income_growth": 6.00,
-        },
-        {
-            "country": "Guatemala",
-            "income_elasticity_2005": 0.52,
-            "pop_growth": 2.20,
-            "income_growth": 1.80,
-        },
-        {
-            "country": "Honduras",
-            "income_elasticity_2005": 0.54,
-            "pop_growth": 2.00,
-            "income_growth": 2.30,
-        },
-        {
-            "country": "Indonesia",
-            "income_elasticity_2005": 0.48,
-            "pop_growth": 1.30,
-            "income_growth": 4.10,
-        },
-        {
-            "country": "Iran",
-            "income_elasticity_2005": 0.39,
-            "pop_growth": 1.20,
-            "income_growth": 3.00,
-        },
-        {
-            "country": "Iraq",
-            "income_elasticity_2005": 0.46,
-            "pop_growth": 2.80,
-            "income_growth": 2.20,
-        },
-        {
-            "country": "Jamaica",
-            "income_elasticity_2005": 0.40,
-            "pop_growth": 0.50,
-            "income_growth": 1.20,
-        },
-        {
-            "country": "Jordan",
-            "income_elasticity_2005": 0.41,
-            "pop_growth": 2.20,
-            "income_growth": 3.10,
-        },
-        {
-            "country": "Kazakhstan",
-            "income_elasticity_2005": 0.37,
-            "pop_growth": 0.90,
-            "income_growth": 7.10,
-        },
-        {
-            "country": "Lebanon",
-            "income_elasticity_2005": 0.35,
-            "pop_growth": 1.10,
-            "income_growth": 2.50,
-        },
-        {
-            "country": "Malaysia",
-            "income_elasticity_2005": 0.28,
-            "pop_growth": 1.80,
-            "income_growth": 3.60,
-        },
-        {
-            "country": "Mexico",
-            "income_elasticity_2005": 0.31,
-            "pop_growth": 1.20,
-            "income_growth": 1.90,
-        },
-        {
-            "country": "Morocco",
-            "income_elasticity_2005": 0.46,
-            "pop_growth": 1.20,
-            "income_growth": 3.40,
-        },
-        {
-            "country": "Peru", "income_elasticity_2005": 0.41,
-            "pop_growth": 1.20,
-            "income_growth": 3.80,
-        },
-        {
-            "country": "Philippines",
-            "income_elasticity_2005": 0.49,
-            "pop_growth": 1.80,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "Romania",
-            "income_elasticity_2005": 0.35,
-            "pop_growth": -0.40,
-            "income_growth": 5.40,
-        },
-        {
-            "country": "South Africa",
-            "income_elasticity_2005": 0.38,
-            "pop_growth": 1.30,
-            "income_growth": 2.10,
-        },
-        {
-            "country": "Sri Lanka",
-            "income_elasticity_2005": 0.48,
-            "pop_growth": 0.70,
-            "income_growth": 4.50,
-        },
-        {
-            "country": "Thailand",
-            "income_elasticity_2005": 0.36,
-            "pop_growth": 0.60,
-            "income_growth": 3.90,
-        },
-        {
-            "country": "Tunisia",
-            "income_elasticity_2005": 0.42,
-            "pop_growth": 1.00,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "Turkey",
-            "income_elasticity_2005": 0.34,
-            "pop_growth": 1.30,
-            "income_growth": 4.20,
-        },
-        {
-            "country": "Ukraine",
-            "income_elasticity_2005": 0.40,
-            "pop_growth": -0.60,
-            "income_growth": 5.10,
-        },
-        {
-            "country": "Uzbekistan",
-            "income_elasticity_2005": 0.51,
-            "pop_growth": 1.40,
-            "income_growth": 4.80,
-        },
-        # High Income
-        {
-            "country": "Australia",
-            "income_elasticity_2005": 0.12,
-            "pop_growth": 1.30,
-            "income_growth": 1.80,
-        },
-        {
-            "country": "Austria",
-            "income_elasticity_2005": 0.11,
-            "pop_growth": 0.40,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "Belgium",
-            "income_elasticity_2005": 0.11,
-            "pop_growth": 0.50,
-            "income_growth": 1.40,
-        },
-        {
-            "country": "Canada",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": 1.00,
-            "income_growth": 1.50,
-        },
-        {
-            "country": "Chile",
-            "income_elasticity_2005": 0.24,
-            "pop_growth": 1.00,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "Croatia",
-            "income_elasticity_2005": 0.28,
-            "pop_growth": -0.20,
-            "income_growth": 3.80,
-        },
-        {
-            "country": "Cyprus",
-            "income_elasticity_2005": 0.20,
-            "pop_growth": 1.50,
-            "income_growth": 2.10,
-        },
-        {
-            "country": "Czechia",
-            "income_elasticity_2005": 0.22,
-            "pop_growth": 0.20,
-            "income_growth": 3.90,
-        },
-        {
-            "country": "Denmark",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": 0.30,
-            "income_growth": 1.30,
-        },
-        {
-            "country": "Estonia",
-            "income_elasticity_2005": 0.25,
-            "pop_growth": -0.30,
-            "income_growth": 6.20,
-        },
-        {
-            "country": "Finland",
-            "income_elasticity_2005": 0.11,
-            "pop_growth": 0.30,
-            "income_growth": 1.70,
-        },
-        {
-            "country": "France",
-            "income_elasticity_2005": 0.11,
-            "pop_growth": 0.60,
-            "income_growth": 1.20,
-        },
-        {
-            "country": "Germany",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": -0.10,
-            "income_growth": 1.40,
-        },
-        {
-            "country": "Greece",
-            "income_elasticity_2005": 0.18,
-            "pop_growth": 0.20,
-            "income_growth": 2.10,
-        },
-        {
-            "country": "Hungary",
-            "income_elasticity_2005": 0.24,
-            "pop_growth": -0.20,
-            "income_growth": 3.40,
-        },
-        {
-            "country": "Ireland",
-            "income_elasticity_2005": 0.11,
-            "pop_growth": 1.80,
-            "income_growth": 3.50,
-        },
-        {
-            "country": "Israel",
-            "income_elasticity_2005": 0.16,
-            "pop_growth": 1.80,
-            "income_growth": 1.90,
-        },
-        {
-            "country": "Italy",
-            "income_elasticity_2005": 0.13,
-            "pop_growth": 0.30,
-            "income_growth": 0.80,
-        },
-        {
-            "country": "Japan",
-            "income_elasticity_2005": 0.12,
-            "pop_growth": 0.00,
-            "income_growth": 1.10,
-        },
-        {
-            "country": "Kuwait",
-            "income_elasticity_2005": 0.18,
-            "pop_growth": 3.50,
-            "income_growth": 1.80,
-        },
-        {
-            "country": "Latvia",
-            "income_elasticity_2005": 0.26,
-            "pop_growth": -0.60,
-            "income_growth": 6.80,
-        },
-        {
-            "country": "Lithuania",
-            "income_elasticity_2005": 0.26,
-            "pop_growth": -0.50,
-            "income_growth": 6.40,
-        },
-        {
-            "country": "Netherlands",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": 0.40,
-            "income_growth": 1.40,
-        },
-        {
-            "country": "New Zealand",
-            "income_elasticity_2005": 0.12,
-            "pop_growth": 1.10,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "Norway",
-            "income_elasticity_2005": 0.09,
-            "pop_growth": 0.80,
-            "income_growth": 1.50,
-        },
-        {
-            "country": "Poland",
-            "income_elasticity_2005": 0.25,
-            "pop_growth": -0.10,
-            "income_growth": 4.10,
-        },
-        {
-            "country": "Portugal",
-            "income_elasticity_2005": 0.18,
-            "pop_growth": 0.10,
-            "income_growth": 1.10,
-        },
-        {
-            "country": "Saudi Arabia",
-            "income_elasticity_2005": 0.22,
-            "pop_growth": 2.40,
-            "income_growth": 2.20,
-        },
-        {
-            "country": "Singapore",
-            "income_elasticity_2005": 0.12,
-            "pop_growth": 2.10,
-            "income_growth": 3.80,
-        },
-        {
-            "country": "Slovakia",
-            "income_elasticity_2005": 0.23,
-            "pop_growth": 0.10,
-            "income_growth": 4.80,
-        },
-        {
-            "country": "Slovenia",
-            "income_elasticity_2005": 0.19,
-            "pop_growth": 0.20,
-            "income_growth": 3.20,
-        },
-        {
-            "country": "South Korea",
-            "income_elasticity_2005": 0.18,
-            "pop_growth": 0.50,
-            "income_growth": 3.90,
-        },
-        {
-            "country": "Spain",
-            "income_elasticity_2005": 0.14,
-            "pop_growth": 1.20,
-            "income_growth": 1.70,
-        },
-        {
-            "country": "Sweden",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": 0.50,
-            "income_growth": 1.80,
-        },
-        {
-            "country": "Switzerland",
-            "income_elasticity_2005": 0.08,
-            "pop_growth": 0.70,
-            "income_growth": 1.30,
-        },
-        {
-            "country": "United Arab Emirates",
-            "income_elasticity_2005": 0.15,
-            "pop_growth": 4.20,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "United Kingdom",
-            "income_elasticity_2005": 0.10,
-            "pop_growth": 0.70,
-            "income_growth": 1.50,
-        },
-        {
-            "country": "United States",
-            "income_elasticity_2005": 0.08,
-            "pop_growth": 0.90,
-            "income_growth": 1.60,
-        },
-        {
-            "country": "Uruguay",
-            "income_elasticity_2005": 0.25,
-            "pop_growth": 0.30,
-            "income_growth": 2.80,
-        },
+    df_combined = pd.DataFrame()
+
+    for indicator_code, col_name in indicators.items():
+        url = f"http://api.worldbank.org/v2/country/all/indicator/{indicator_code}?date={year}&format=json&per_page=300"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                json_data = response.json()
+                if len(json_data) > 1 and json_data[1]:
+                    records = [
+                        {
+                            "country": item["country"]["value"],
+                            col_name: item["value"],
+                        }
+                        for item in json_data[1]
+                        if item["value"] is not None
+                    ]
+                    df_ind = pd.DataFrame(records)
+                    if df_combined.empty:
+                        df_combined = df_ind
+                    else:
+                        df_combined = pd.merge(
+                            df_combined, df_ind, on="country", how="outer"
+                        )
+        except Exception as e:
+            st.error(f"Error fetching indicator {indicator_code}: {e}")
+
+    return df_combined
+
+
+@st.cache_data
+def load_usda_elasticities():
+    """USDA 2005 Baseline Income Elasticities for 100+ countries."""
+    usda_base = [
+        {"country": "Afghanistan", "income_elasticity_2005": 0.78},
+        {"country": "Albania", "income_elasticity_2005": 0.48},
+        {"country": "Algeria", "income_elasticity_2005": 0.45},
+        {"country": "Angola", "income_elasticity_2005": 0.75},
+        {"country": "Argentina", "income_elasticity_2005": 0.32},
+        {"country": "Armenia", "income_elasticity_2005": 0.46},
+        {"country": "Australia", "income_elasticity_2005": 0.12},
+        {"country": "Austria", "income_elasticity_2005": 0.11},
+        {"country": "Azerbaijan", "income_elasticity_2005": 0.44},
+        {"country": "Bangladesh", "income_elasticity_2005": 0.72},
+        {"country": "Belarus", "income_elasticity_2005": 0.38},
+        {"country": "Belgium", "income_elasticity_2005": 0.11},
+        {"country": "Benin", "income_elasticity_2005": 0.74},
+        {"country": "Bolivia", "income_elasticity_2005": 0.52},
+        {"country": "Bosnia and Herzegovina", "income_elasticity_2005": 0.41},
+        {"country": "Brazil", "income_elasticity_2005": 0.35},
+        {"country": "Bulgaria", "income_elasticity_2005": 0.36},
+        {"country": "Burkina Faso", "income_elasticity_2005": 0.76},
+        {"country": "Burundi", "income_elasticity_2005": 0.80},
+        {"country": "Cambodia", "income_elasticity_2005": 0.71},
+        {"country": "Cameroon", "income_elasticity_2005": 0.68},
+        {"country": "Canada", "income_elasticity_2005": 0.10},
+        {"country": "Central African Republic", "income_elasticity_2005": 0.79},
+        {"country": "Chad", "income_elasticity_2005": 0.78},
+        {"country": "Chile", "income_elasticity_2005": 0.24},
+        {"country": "China", "income_elasticity_2005": 0.42},
+        {"country": "Colombia", "income_elasticity_2005": 0.38},
+        {"country": "Congo, Dem. Rep.", "income_elasticity_2005": 0.81},
+        {"country": "Costa Rica", "income_elasticity_2005": 0.33},
+        {"country": "Croatia", "income_elasticity_2005": 0.28},
+        {"country": "Cyprus", "income_elasticity_2005": 0.20},
+        {"country": "Czechia", "income_elasticity_2005": 0.22},
+        {"country": "Denmark", "income_elasticity_2005": 0.10},
+        {"country": "Dominican Republic", "income_elasticity_2005": 0.42},
+        {"country": "Ecuador", "income_elasticity_2005": 0.45},
+        {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50},
+        {"country": "El Salvador", "income_elasticity_2005": 0.48},
+        {"country": "Estonia", "income_elasticity_2005": 0.25},
+        {"country": "Ethiopia", "income_elasticity_2005": 0.77},
+        {"country": "Finland", "income_elasticity_2005": 0.11},
+        {"country": "France", "income_elasticity_2005": 0.11},
+        {"country": "Gambia, The", "income_elasticity_2005": 0.73},
+        {"country": "Georgia", "income_elasticity_2005": 0.47},
+        {"country": "Germany", "income_elasticity_2005": 0.10},
+        {"country": "Ghana", "income_elasticity_2005": 0.65},
+        {"country": "Greece", "income_elasticity_2005": 0.18},
+        {"country": "Guatemala", "income_elasticity_2005": 0.52},
+        {"country": "Guinea", "income_elasticity_2005": 0.75},
+        {"country": "Haiti", "income_elasticity_2005": 0.74},
+        {"country": "Honduras", "income_elasticity_2005": 0.54},
+        {"country": "Hungary", "income_elasticity_2005": 0.24},
+        {"country": "India", "income_elasticity_2005": 0.62},
+        {"country": "Indonesia", "income_elasticity_2005": 0.48},
+        {"country": "Iran, Islamic Rep.", "income_elasticity_2005": 0.39},
+        {"country": "Iraq", "income_elasticity_2005": 0.46},
+        {"country": "Ireland", "income_elasticity_2005": 0.11},
+        {"country": "Israel", "income_elasticity_2005": 0.16},
+        {"country": "Italy", "income_elasticity_2005": 0.13},
+        {"country": "Jamaica", "income_elasticity_2005": 0.40},
+        {"country": "Japan", "income_elasticity_2005": 0.12},
+        {"country": "Jordan", "income_elasticity_2005": 0.41},
+        {"country": "Kazakhstan", "income_elasticity_2005": 0.37},
+        {"country": "Kenya", "income_elasticity_2005": 0.68},
+        {"country": "Korea, Rep.", "income_elasticity_2005": 0.18},
+        {"country": "Kuwait", "income_elasticity_2005": 0.18},
+        {"country": "Latvia", "income_elasticity_2005": 0.26},
+        {"country": "Lebanon", "income_elasticity_2005": 0.35},
+        {"country": "Lithuania", "income_elasticity_2005": 0.26},
+        {"country": "Madagascar", "income_elasticity_2005": 0.76},
+        {"country": "Malawi", "income_elasticity_2005": 0.79},
+        {"country": "Malaysia", "income_elasticity_2005": 0.28},
+        {"country": "Mali", "income_elasticity_2005": 0.75},
+        {"country": "Mexico", "income_elasticity_2005": 0.31},
+        {"country": "Morocco", "income_elasticity_2005": 0.46},
+        {"country": "Mozambique", "income_elasticity_2005": 0.78},
+        {"country": "Nepal", "income_elasticity_2005": 0.73},
+        {"country": "Netherlands", "income_elasticity_2005": 0.10},
+        {"country": "New Zealand", "income_elasticity_2005": 0.12},
+        {"country": "Niger", "income_elasticity_2005": 0.79},
+        {"country": "Nigeria", "income_elasticity_2005": 0.67},
+        {"country": "Norway", "income_elasticity_2005": 0.09},
+        {"country": "Pakistan", "income_elasticity_2005": 0.64},
+        {"country": "Peru", "income_elasticity_2005": 0.41},
+        {"country": "Philippines", "income_elasticity_2005": 0.49},
+        {"country": "Poland", "income_elasticity_2005": 0.25},
+        {"country": "Portugal", "income_elasticity_2005": 0.18},
+        {"country": "Romania", "income_elasticity_2005": 0.35},
+        {"country": "Russian Federation", "income_elasticity_2005": 0.33},
+        {"country": "Rwanda", "income_elasticity_2005": 0.77},
+        {"country": "Saudi Arabia", "income_elasticity_2005": 0.22},
+        {"country": "Senegal", "income_elasticity_2005": 0.70},
+        {"country": "Sierra Leone", "income_elasticity_2005": 0.78},
+        {"country": "Singapore", "income_elasticity_2005": 0.12},
+        {"country": "Slovak Republic", "income_elasticity_2005": 0.23},
+        {"country": "Slovenia", "income_elasticity_2005": 0.19},
+        {"country": "South Africa", "income_elasticity_2005": 0.38},
+        {"country": "Spain", "income_elasticity_2005": 0.14},
+        {"country": "Sri Lanka", "income_elasticity_2005": 0.48},
+        {"country": "Sweden", "income_elasticity_2005": 0.10},
+        {"country": "Switzerland", "income_elasticity_2005": 0.08},
+        {"country": "Tanzania", "income_elasticity_2005": 0.75},
+        {"country": "Thailand", "income_elasticity_2005": 0.36},
+        {"country": "Tunisia", "income_elasticity_2005": 0.42},
+        {"country": "Turkiye", "income_elasticity_2005": 0.34},
+        {"country": "Uganda", "income_elasticity_2005": 0.76},
+        {"country": "Ukraine", "income_elasticity_2005": 0.40},
+        {"country": "United Arab Emirates", "income_elasticity_2005": 0.15},
+        {"country": "United Kingdom", "income_elasticity_2005": 0.10},
+        {"country": "United States", "income_elasticity_2005": 0.08},
+        {"country": "Uruguay", "income_elasticity_2005": 0.25},
+        {"country": "Uzbekistan", "income_elasticity_2005": 0.51},
+        {"country": "Viet Nam", "income_elasticity_2005": 0.58},
+        {"country": "Zambia", "income_elasticity_2005": 0.74},
+        {"country": "Zimbabwe", "income_elasticity_2005": 0.71},
     ]
-    return pd.DataFrame(world_bank_2005_data)
+    return pd.DataFrame(usda_base)
+
+
+@st.cache_data
+def load_merged_data():
+    """Merges live World Bank API indicators with USDA Elasticity data."""
+    df_wb = fetch_world_bank_indicators(year="2005")
+    df_usda = load_usda_elasticities()
+
+    if not df_wb.empty:
+        merged = pd.merge(df_usda, df_wb, on="country", how="inner")
+        merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
+        merged["income_growth"] = merged["income_growth"].fillna(2.50)
+        return merged
+
+    # Graceful fallback if API fails completely
+    df_usda["pop_growth"] = 1.20
+    df_usda["income_growth"] = 2.50
+    return df_usda
 
 
 @st.cache_data
@@ -749,78 +225,40 @@ def load_aggregate_pie_data():
 
 @st.cache_data
 def load_ifpri_data():
-    try:
-        return pd.read_csv("Predicted_Elasticities.csv")
-    except FileNotFoundError:
-        sample_ifpri = [
-            {"country": "Kenya", "food_group": 1, "income_elasticity": 0.45},
-            {"country": "Kenya", "food_group": 2, "income_elasticity": 0.35},
-            {"country": "Kenya", "food_group": 3, "income_elasticity": 0.50},
-            {"country": "Kenya", "food_group": 4, "income_elasticity": 0.60},
-            {"country": "Kenya", "food_group": 5, "income_elasticity": 0.75},
-            {"country": "Kenya", "food_group": 6, "income_elasticity": 0.85},
-            {"country": "Kenya", "food_group": 7, "income_elasticity": 0.80},
-            {"country": "Kenya", "food_group": 8, "income_elasticity": 0.78},
-            {"country": "Kenya", "food_group": 9, "income_elasticity": 0.55},
-            {"country": "Brazil", "food_group": 1, "income_elasticity": 0.15},
-            {"country": "Brazil", "food_group": 2, "income_elasticity": 0.10},
-            {"country": "Brazil", "food_group": 3, "income_elasticity": 0.25},
-            {"country": "Brazil", "food_group": 4, "income_elasticity": 0.40},
-            {"country": "Brazil", "food_group": 5, "income_elasticity": 0.50},
-            {"country": "Brazil", "food_group": 6, "income_elasticity": 0.55},
-            {"country": "Brazil", "food_group": 7, "income_elasticity": 0.50},
-            {"country": "Brazil", "food_group": 8, "income_elasticity": 0.45},
-            {"country": "Brazil", "food_group": 9, "income_elasticity": 0.30},
-            {
-                "country": "United States",
-                "food_group": 1,
-                "income_elasticity": 0.02,
-            },
-            {
-                "country": "United States",
-                "food_group": 2,
-                "income_elasticity": 0.01,
-            },
-            {
-                "country": "United States",
-                "food_group": 3,
-                "income_elasticity": 0.08,
-            },
-            {
-                "country": "United States",
-                "food_group": 4,
-                "income_elasticity": 0.15,
-            },
-            {
-                "country": "United States",
-                "food_group": 5,
-                "income_elasticity": 0.18,
-            },
-            {
-                "country": "United States",
-                "food_group": 6,
-                "income_elasticity": 0.20,
-            },
-            {
-                "country": "United States",
-                "food_group": 7,
-                "income_elasticity": 0.22,
-            },
-            {
-                "country": "United States",
-                "food_group": 8,
-                "income_elasticity": 0.15,
-            },
-            {
-                "country": "United States",
-                "food_group": 9,
-                "income_elasticity": 0.05,
-            },
-        ]
-        return pd.DataFrame(sample_ifpri)
+    sample_ifpri = [
+        {"country": "Kenya", "food_group": 1, "income_elasticity": 0.45},
+        {"country": "Kenya", "food_group": 2, "income_elasticity": 0.35},
+        {"country": "Kenya", "food_group": 3, "income_elasticity": 0.50},
+        {"country": "Kenya", "food_group": 4, "income_elasticity": 0.60},
+        {"country": "Kenya", "food_group": 5, "income_elasticity": 0.75},
+        {"country": "Kenya", "food_group": 6, "income_elasticity": 0.85},
+        {"country": "Kenya", "food_group": 7, "income_elasticity": 0.80},
+        {"country": "Kenya", "food_group": 8, "income_elasticity": 0.78},
+        {"country": "Kenya", "food_group": 9, "income_elasticity": 0.55},
+        {"country": "Brazil", "food_group": 1, "income_elasticity": 0.15},
+        {"country": "Brazil", "food_group": 2, "income_elasticity": 0.10},
+        {"country": "Brazil", "food_group": 3, "income_elasticity": 0.25},
+        {"country": "Brazil", "food_group": 4, "income_elasticity": 0.40},
+        {"country": "Brazil", "food_group": 5, "income_elasticity": 0.50},
+        {"country": "Brazil", "food_group": 6, "income_elasticity": 0.55},
+        {"country": "Brazil", "food_group": 7, "income_elasticity": 0.50},
+        {"country": "Brazil", "food_group": 8, "income_elasticity": 0.45},
+        {"country": "Brazil", "food_group": 9, "income_elasticity": 0.30},
+        {"country": "United States", "food_group": 1, "income_elasticity": 0.02},
+        {"country": "United States", "food_group": 2, "income_elasticity": 0.01},
+        {"country": "United States", "food_group": 3, "income_elasticity": 0.08},
+        {"country": "United States", "food_group": 4, "income_elasticity": 0.15},
+        {"country": "United States", "food_group": 5, "income_elasticity": 0.18},
+        {"country": "United States", "food_group": 6, "income_elasticity": 0.20},
+        {"country": "United States", "food_group": 7, "income_elasticity": 0.22},
+        {"country": "United States", "food_group": 8, "income_elasticity": 0.15},
+        {"country": "United States", "food_group": 9, "income_elasticity": 0.05},
+    ]
+    return pd.DataFrame(sample_ifpri)
 
 
-df_2005 = load_2005_aggregate_data()
+# Load Datasets
+df_2005 = load_merged_data()
 df_pie = load_aggregate_pie_data()
 df_ifpri = load_ifpri_data()
 
@@ -838,12 +276,12 @@ tab1, tab2 = st.tabs(
 
 
 # ==========================================
-# TAB 1: 2005 AGGREGATE MODEL (WORLD BANK DATA LOADED AUTOMATICALLY)
+# TAB 1: 2005 AGGREGATE MODEL (WORLD BANK LIVE API)
 # ==========================================
 with tab1:
-    st.header("Aggregate Food Demand Growth (2005 Baseline)")
+    st.header("Aggregate Food Demand Growth (2005 World Bank API)")
     st.write(
-        "Select a country to automatically load its World Bank population growth, per-capita GDP growth, and USDA income elasticity."
+        "Select a country to automatically fetch official World Bank population growth, GDP per-capita growth, and USDA elasticity."
     )
 
     col1, col2 = st.columns([1, 1])
@@ -857,13 +295,12 @@ with tab1:
         )
 
         selected_country_2005 = st.selectbox(
-            "Select Country (100+ World Bank Datasets Available):",
+            "Select Country (100+ Live World Bank Datasets Available):",
             countries_2005,
             index=default_index,
             key="country_2005",
         )
 
-        # Pull World Bank parameters directly from dataset for selected country
         country_row = df_2005[df_2005["country"] == selected_country_2005].iloc[
             0
         ]
@@ -871,13 +308,14 @@ with tab1:
         pop_growth_2005 = float(country_row["pop_growth"])
         income_growth_2005 = float(country_row["income_growth"])
 
-        # Calculations
         pop_contrib_2005 = pop_growth_2005
         inc_contrib_2005 = e_y_2005 * income_growth_2005
         total_growth_2005 = pop_contrib_2005 + inc_contrib_2005
 
         st.markdown("---")
-        st.subheader(f"📊 Loaded World Bank Indicators ({selected_country_2005})")
+        st.subheader(
+            f"🌐 Live World Bank API Indicators ({selected_country_2005}, 2005)"
+        )
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Population Growth", f"{pop_growth_2005:.2f}%")
@@ -891,7 +329,7 @@ with tab1:
         )
 
         st.caption(
-            f"Formula: **{pop_contrib_2005:.2f}%** (Population) + (**{e_y_2005:.2f}** × **{income_growth_2005:.2f}%** Income) = **{total_growth_2005:.2f}%** Total Demand Growth"
+            f"Formula: **{pop_contrib_2005:.2f}%** (Population Growth) + (**{e_y_2005:.2f}** × **{income_growth_2005:.2f}%** GDP Growth) = **{total_growth_2005:.2f}%** Annual Demand Growth"
         )
 
     with col2:
