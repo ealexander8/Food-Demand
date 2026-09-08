@@ -118,15 +118,27 @@ def fetch_latest_world_bank_indicators():
 
 @st.cache_data
 def load_full_elasticity_dataset():
-    """Reads 'Table1 (2).xlsx' (or 'Table1 (2).xls') directly and cleans footnote letters on the fly."""
+    """Reads .xlsx dataset and cleans footnote letters on the fly."""
     try:
-        # Checks for .xlsx first to avoid requiring xlrd
-        file_path = (
-            "Table1 (2).xlsx"
-            if os.path.exists("Table1 (2).xlsx")
-            else "Table1 (2).xls"
-        )
-        df = pd.read_excel(file_path, header=1)
+        possible_files = [
+            "Table1 (2).xlsx",
+            "Table1(2).xlsx",
+            "Cleaned_Table1_Full_Elasticity.xlsx",
+        ]
+
+        target_file = None
+        for f in possible_files:
+            if os.path.exists(f):
+                target_file = f
+                break
+
+        if not target_file:
+            st.error(
+                "Excel file not found. Please ensure 'Table1 (2).xlsx' is present in the root folder."
+            )
+            return pd.DataFrame()
+
+        df = pd.read_excel(target_file, header=1)
 
         def clean_val(x):
             if pd.isna(x):
