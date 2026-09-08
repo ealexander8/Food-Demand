@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import re
 import requests
 import streamlit as st
 
@@ -25,17 +26,16 @@ FOOD_GROUP_MAP = {
     9: "Fats, Oils & Sugars",
 }
 
-# Distinct category colors for food subgroups
 COLOR_MAP_SUBGROUP = {
-    1: "#D7CCC8",  # Cereals & Staples
-    2: "#BCAAA4",  # Roots
-    3: "#8D6E63",  # Plant Proteins
-    4: "#2E7D32",  # Vegetables
-    5: "#81C784",  # Fruits
-    6: "#C62828",  # Meat & Poultry
-    7: "#0288D1",  # Fish
-    8: "#7B1FA2",  # Milk & Dairy
-    9: "#FBC02D",  # Sugar, Oils
+    1: "#D7CCC8",
+    2: "#BCAAA4",
+    3: "#8D6E63",
+    4: "#2E7D32",
+    5: "#81C784",
+    6: "#C62828",
+    7: "#0288D1",
+    8: "#7B1FA2",
+    9: "#FBC02D",
 }
 
 NAME_COLOR_MAP_SUBGROUP = {
@@ -43,20 +43,6 @@ NAME_COLOR_MAP_SUBGROUP = {
 }
 
 # --- MAPS FOR TAB 1 (BROAD GOODS) ---
-# Map Excel names to code-friendly format
-BROAD_GOODS_EXCEL_TO_CODE = {
-    "food_beverages_tobacco": "e_food",
-    "clothing_footwear": "e_clothing",
-    "housing": "e_housing",
-    "house_furnishing": "e_house_furn",
-    "medical_health": "e_medical",
-    "transport_communication": "e_transport",
-    "recreation": "e_recreation",
-    "education": "e_education",
-    "other": "e_other",
-}
-
-# Map Code names to display friendly format
 BROAD_GOODS_CODE_TO_FRIENDLY = {
     "e_food": "Food, Beverages & Tobacco",
     "e_clothing": "Clothing & Footwear",
@@ -69,28 +55,25 @@ BROAD_GOODS_CODE_TO_FRIENDLY = {
     "e_other": "Other Expenditure",
 }
 
-# Distinct category colors for Engel's Law Stacked Area Chart (Tab 1)
 BROAD_GOOD_COLOR_MAP = {
     "Food, Beverages & Tobacco": "#D7CCC8",
-    "Clothing & Footwear": "#E040FB",  # purple
-    "Housing": "#FFA726",  # orange
-    "House Furnishing": "#FFEE58",  # yellow
-    "Medical & Health": "#03A9F4",  # cyan
-    "Transport & Communication": "#26A69A",  # teal
-    "Recreation": "#43A047",  # green
-    "Education": "#7E57C2",  # deep purple
-    "Other Expenditure": "#78909C",  # blue-grey
+    "Clothing & Footwear": "#E040FB",
+    "Housing": "#FFA726",
+    "House Furnishing": "#FFEE58",
+    "Medical & Health": "#03A9F4",
+    "Transport & Communication": "#26A69A",
+    "Recreation": "#43A047",
+    "Education": "#7E57C2",
+    "Other Expenditure": "#78909C",
 }
 
 
 # ==========================================
-# 2. LIVE WORLD BANK API & DATA LOADERS
+# 2. DATA LOADERS & AUTOMATIC CLEANING
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
-    """Fetches most recent annual Population Growth (SP.POP.GROW) and
-    Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from World Bank API using mrnev=1.
-    """
+    """Fetches Population Growth and GDP Growth from World Bank API."""
     indicators = {
         "SP.POP.GROW": ("pop_growth", "pop_year"),
         "NY.GDP.PCAP.KD.ZG": ("income_growth", "income_year"),
@@ -124,7 +107,6 @@ def fetch_latest_world_bank_indicators():
         except Exception as e:
             st.error(f"Error fetching indicator {indicator_code}: {e}")
 
-    # Standardize names immediately on return
     if not df_combined.empty:
         df_combined["country"] = (
             df_combined["country"].astype(str).str.strip().str.title()
@@ -135,17 +117,31 @@ def fetch_latest_world_bank_indicators():
 
 @st.cache_data
 def load_full_elasticity_dataset():
-    """Loads all broad income elasticities from the expanded Excel file,
-    standardizing names so Afghanistan always appears.
-    """
+    """Reads 'Table1 (2).xls' directly and cleans footnote letters on the fly."""
     try:
-        # Assumes Cleaned_Table1_Full_Elasticity.xlsx exists in same folder
-        df = pd.read_excel("Cleaned_Table1_Full_Elasticity.xlsx")
+        df = pd.read_excel("Table1 (2).xls", header=1)
 
-        # Standardize country names to guarantee dropdown matching
+        def clean_val(x):
+            if pd.isna(x):
+                return x
+            if isinstance(x, str):
+                cleaned = re.sub(r"[^\d.-]", "", x)
+                try:
+                    return float(cleaned)
+                except ValueError:
+                    return None
+            return x
+
+        for col in df.columns[1:]:
+            df[col] = df[col].apply(clean_val)
+
+        new_cols = [
+            c.strip().lower().replace(", ", "_").replace(" & ", "_").replace(" ", "_")
+            for c in df.columns
+        ]
+        df.columns = new_cols
         df["country"] = df["country"].astype(str).str.strip().str.title()
 
-        # Simplified rename format for internal coding use
         excel_rename_cols = {
             "food_beverages_tobacco": "e_food",
             "clothing_footwear": "e_clothing",
@@ -162,26 +158,19 @@ def load_full_elasticity_dataset():
         columns_to_keep = ["country"] + list(excel_rename_cols.values())
         return df_cleaned[columns_to_keep].dropna()
 
-    except FileNotFoundError:
-        st.error(
-            "Error: Cleaned_Table1_Full_Elasticity.xlsx not found. Please run the cleaning script first."
-        )
+    except Exception as e:
+        st.error(f"Error loading 'Table1 (2).xls': {e}")
         return pd.DataFrame()
 
 
 @st.cache_data
 def load_merged_data():
-    """Merges all USDA broad elasticities with latest World Bank API indicators,
-    supplying defaults to preserve Afghanistan.
-    """
+    """Merges USDA elasticities with World Bank API indicators."""
     df_wb = fetch_latest_world_bank_indicators()
     df_usda = load_full_elasticity_dataset()
 
     if not df_usda.empty and not df_wb.empty:
-        # Use how="left" to keep all USDA countries (including Afghanistan) even if missing from World Bank API
         merged = pd.merge(df_usda, df_wb, on="country", how="left")
-
-        # Fill in missing WB data with safe defaults for simulation
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
         merged["pop_year"] = merged["pop_year"].fillna("Default/Fallback")
@@ -193,24 +182,22 @@ def load_merged_data():
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Generates food subgroup income elasticities for ALL countries using Bennett's multipliers."""
-    # Subgroup elasticities are relative to the *overall* food demand elasticity (e_food)
+    """Generates food subgroup income elasticities using Bennett's multipliers."""
     group_multipliers = {
-        1: 0.50,  # Cereals & Staples
-        2: 0.40,  # Roots & Tubers
-        3: 0.70,  # Pulses & Legumes
-        4: 0.95,  # Vegetables
-        5: 1.15,  # Fruits
-        6: 1.30,  # Meat & Poultry
-        7: 1.20,  # Fish & Seafood
-        8: 1.10,  # Milk & Dairy
-        9: 0.80,  # Fats, Oils & Sugars
+        1: 0.50,
+        2: 0.40,
+        3: 0.70,
+        4: 0.95,
+        5: 1.15,
+        6: 1.30,
+        7: 1.20,
+        8: 1.10,
+        9: 0.80,
     }
 
     records = []
     for _, row in df_merged.iterrows():
         country = row["country"]
-        # Must subset explicitly for e_food from the multi-good dataset
         base_food_e = float(row.get("e_food", 0.45))
         for fg_id, mult in group_multipliers.items():
             sub_e = round(max(0.01, base_food_e * mult), 2)
@@ -226,26 +213,23 @@ def load_ifpri_data(df_merged):
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds stacked trapezoid diagram depicting changing food demand shares for subgroups as living standards rise."""
+    """Builds stacked trapezoid diagram depicting changing food demand shares."""
     y_levels = np.linspace(0, 100, 50)
-
-    # Standard volume shares at current income (bottom)
     baseline_shares = {
-        1: 35.0,  # Cereals & Staples
-        2: 12.0,  # Roots & Tubers
-        3: 10.0,  # Plant Proteins / Pulses
-        4: 8.0,  # Vegetables
-        5: 6.0,  # Fruits
-        6: 10.0,  # Meat & Poultry
-        7: 5.0,  # Fish
-        8: 8.0,  # Milk & Dairy
-        9: 6.0,  # Fats, Oils & Sugars
+        1: 35.0,
+        2: 12.0,
+        3: 10.0,
+        4: 8.0,
+        5: 6.0,
+        6: 10.0,
+        7: 5.0,
+        8: 8.0,
+        9: 6.0,
     }
 
     country_df_sorted = country_df.sort_values(
         by="income_elasticity", ascending=False
     ).copy()
-
     available_groups = country_df_sorted["food_group"].tolist()
 
     quantities = {}
@@ -349,7 +333,7 @@ tab1, tab2 = st.tabs(
 with tab1:
     st.header("Income Increase and Shifts in Broad Budget Allocation (Engel's Law)")
     st.markdown(
-        " Engel's Law states that as income rises, the **proportion** of total income spent on food decreases, even if absolute food spending increases. Choose a country and adjust hypothetical income growth to see this projection across all goods."
+        "Engel's Law states that as income rises, the **proportion** of total income spent on food decreases, even if absolute food spending increases."
     )
 
     countries_all = sorted(df_2005["country"].unique())
@@ -377,25 +361,11 @@ with tab1:
             format="%.1f",
         )
 
-    # --- SIMULATION & ALLOCATION CHART ---
     st.subheader(f"Projected Budget Share Shift in {selected_country_all}")
     st.markdown(
-        f"This simulation assumes that currently, budget shares are **equal** across all 9 goods (~11.1% each) to visualize relative shifts. Total income increases from 0% to **+{max_inc_growth_hyp:.1f}%** along the x-axis."
+        f"This simulation assumes budget shares start equally distributed across all 9 goods (~11.1% each) to visualize relative shifts. Total income increases from 0% to **+{max_inc_growth_hyp:.1f}%** along the x-axis."
     )
 
-    # List of Good categories for code use
-    code_goods = [
-        "e_clothing",
-        "e_housing",
-        "e_house_furn",
-        "e_medical",
-        "e_transport",
-        "e_recreation",
-        "e_education",
-        "e_other",
-    ]
-
-    # Assume base shares are equal (100% / 9)
     base_shares_all = {
         "e_food": 1 / 9,
         "e_clothing": 1 / 9,
@@ -414,7 +384,6 @@ with tab1:
     for ΔY in income_increase_range:
         for c_good, base_s in base_shares_all.items():
             elasticity = float(country_row_all[c_good])
-            # Engel's Law math to preserve budget constraint sum=1
             new_s = base_s * (1.0 + elasticity * ΔY) / (1.0 + ΔY)
             friendly_n = BROAD_GOODS_CODE_TO_FRIENDLY[c_good]
             proj_records.append(
@@ -436,7 +405,6 @@ with tab1:
         line_shape="spline",
     )
 
-    # Force x-axis labels to have explicitly clear + signs
     fig_proj.update_layout(
         height=500,
         xaxis=dict(tickformat="+.1f"),
@@ -474,7 +442,6 @@ with tab2:
             key="country_ifpri",
         )
 
-    # Look up actual World Bank/USDA indicators for selected country
     row_ifpri = df_2005[df_2005["country"] == selected_country_ifpri].iloc[0]
     wb_income_growth_actual = float(row_ifpri["income_growth"])
     wb_pop_growth_actual = float(row_ifpri["pop_growth"])
@@ -484,7 +451,7 @@ with tab2:
         st.metric(
             f"Annual Pop. Growth ({group_income_year})",
             f"{wb_pop_growth_actual:+.2f}%",
-            help="Most recent reported world bank rate or safe fallback.",
+            help="Most recent reported world bank rate or fallback.",
         )
 
     with ctrl_col3:
@@ -503,12 +470,10 @@ with tab2:
         FOOD_GROUP_MAP
     )
 
-    # Final Calculation: Pop Growth + (Subgroup Elasticity * Income Growth)
     country_ifpri_df["annual_demand_growth"] = wb_pop_growth_actual + (
         country_ifpri_df["income_elasticity"] * group_income_growth_sim
     )
 
-    # --- BAR CHART (COLORS MATCHED TO TRAPEZOID) ---
     country_ifpri_df_sorted = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
     )
@@ -528,16 +493,15 @@ with tab2:
         color_discrete_map=NAME_COLOR_MAP_SUBGROUP,
     )
 
-    # Use explicit clear + formatting for the labels next to bars
     fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
     fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
-    
+
     fig_bar.update_layout(
         height=500,
         xaxis=dict(
             title="Predicted Annual Demand Growth (%)",
             tickformat="+.2f",
-            ticksuffix="%"
+            ticksuffix="%",
         ),
         yaxis_title="",
         showlegend=False,
@@ -545,18 +509,15 @@ with tab2:
 
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # --- BENNETT'S LAW TRAPEZOID DIAGRAM ---
     st.markdown("---")
     fig_trapezoid = build_bennett_trapezoid_figure(
         country_ifpri_df, selected_country_ifpri
     )
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
-    # --- INCOME ELASTICITIES TABLE ---
     st.markdown("---")
     st.subheader("Income Elasticities")
 
-    # CSS to force center alignment on all dataframe column headers and data cells
     st.markdown(
         """
         <style>
@@ -607,7 +568,6 @@ with tab2:
             )
         return styles
 
-    # Use explicitly clear + signs for the total growth column in table
     styled_df = (
         display_df.style
         .set_properties(**{"text-align": "center"})
@@ -619,12 +579,11 @@ with tab2:
         .format(
             {
                 "Income Elasticity (Subgroup)": "{:.2f}",
-                "Total Growth (%)": "{:+.2f}%", 
+                "Total Growth (%)": "{:+.2f}%",
             }
         )
     )
 
-    # Render narrow, left-aligned table with centered headers and cells
     st.dataframe(
         styled_df,
         hide_index=True,
