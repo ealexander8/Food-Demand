@@ -228,7 +228,7 @@ st.markdown(
 )
 
 tab1, tab2 = st.tabs(
-    ["Overview (Aggregate Data)", "Deep Dive: 9 Food Groups (Bennett's Law)"]
+    ["Overview (Aggregate Data)", "Bennett's Law: Food Subgroups"]
 )
 
 
@@ -342,7 +342,7 @@ with tab1:
 
 
 # ==========================================
-# TAB 2: 9 FOOD GROUPS (BENNETT'S LAW)
+# TAB 2: BENNETT'S LAW: FOOD SUBGROUPS
 # ==========================================
 with tab2:
     st.header("Commodity-Specific Demand Growth (Bennett's Law)")
@@ -350,10 +350,11 @@ with tab2:
         "Explore how demand shifts across 9 distinct food categories using updated IFPRI elasticities."
     )
 
+    countries_ifpri = sorted(df_ifpri["country"].unique())
+
     ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
 
     with ctrl_col1:
-        countries_ifpri = sorted(df_ifpri["country"].unique())
         selected_country_ifpri = st.selectbox(
             "Select Country / Region:",
             countries_ifpri,
@@ -361,22 +362,31 @@ with tab2:
             key="country_ifpri",
         )
 
+    # Retrieve most recent World Bank indicators for selected country
+    wb_match = df_2005[df_2005["country"] == selected_country_ifpri]
+    if not wb_match.empty:
+        group_pop_growth = float(wb_match.iloc[0]["pop_growth"])
+        wb_income_growth = float(wb_match.iloc[0]["income_growth"])
+        group_pop_year = str(wb_match.iloc[0].get("pop_year", "Recent"))
+    else:
+        group_pop_growth = 1.20
+        wb_income_growth = 2.50
+        group_pop_year = "Recent"
+
     with ctrl_col2:
-        group_pop_growth = st.number_input(
-            "Annual Population Growth (%)",
-            value=1.20,
-            step=0.10,
-            format="%.2f",
-            key="group_pop",
+        st.metric(
+            f"Pop. Growth ({group_pop_year})",
+            f"{group_pop_growth:.2f}%",
+            help="Most recent annual population growth rate from World Bank API",
         )
 
     with ctrl_col3:
         group_income_growth = st.number_input(
             "Annual Income Growth (%)",
-            value=3.50,
+            value=wb_income_growth,
             step=0.10,
             format="%.2f",
-            key="group_inc",
+            key=f"group_inc_{selected_country_ifpri}",
         )
 
     country_ifpri_df = df_ifpri[
