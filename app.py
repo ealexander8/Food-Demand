@@ -12,9 +12,9 @@ st.set_page_config(page_title="Expenditure Elasticities App", layout="wide")
 def load_usda_data():
     """
     Loads the USDA data from 2005.
-    Strictly calls for 'Table1(2).xlsx'.
+    Strictly calls for 'Table1 (2).xlsx' based on the GitHub directory.
     """
-    file_name = "Table1(2).xlsx"
+    file_name = "Table1 (2).xlsx"
     try:
         df = pd.read_excel(file_name)
         return df
@@ -62,7 +62,7 @@ tab1, tab2, tab3 = st.tabs([
 # --- TAB 1: USDA Data ---
 with tab1:
     st.header("USDA Data (2005)")
-    st.write("This tab relies exclusively on the USDA data from Table1(2).")
+    st.write("This tab relies exclusively on the USDA data from `Table1 (2).xlsx`.")
     
     if not usda_df.empty:
         st.dataframe(usda_df, use_container_width=True)
