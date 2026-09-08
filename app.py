@@ -400,6 +400,27 @@ with tab2:
         country_ifpri_df["income_elasticity"] * group_income_growth
     )
 
+    # --- CONCISE TABLE: INCOME ELASTICITIES BY FOOD GROUP ---
+    st.markdown("---")
+    st.subheader(f"Income Elasticities by Food Group ({selected_country_ifpri})")
+    elasticity_summary = (
+        country_ifpri_df[["food_group", "food_group_name", "income_elasticity"]]
+        .sort_values("food_group")
+        .rename(
+            columns={
+                "food_group": "Group Code",
+                "food_group_name": "Food Group Category",
+                "income_elasticity": "Income Elasticity",
+            }
+        )
+    )
+    st.dataframe(
+        elasticity_summary,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    # --- BAR CHART ---
     country_ifpri_df = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
     )
