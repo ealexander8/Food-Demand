@@ -287,11 +287,10 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities from an IFPRI dataset file.
-    Falls back to generating them using Bennett's Law relative scaling principles
-    if the file is missing or lacks specific countries.
+    """Loads food subgroup income elasticities from IFPRI_Food_Elasticities file.
+    Supports 'estimate_2021' or 'income_elasticity' column names.
+    Falls back to Bennett's Law relative scaling principles if the file is missing.
     """
-    # 1. Base generation logic (Bennett's Law scaling for fallbacks)
     group_multipliers = {
         1: 0.50,  # Cereals & Staples
         2: 0.40,  # Roots & Tubers
@@ -320,23 +319,23 @@ def load_ifpri_data(df_merged):
     
     df_fallback = pd.DataFrame(fallback_records)
 
-    # 2. Attempt to load actual IFPRI data from external files
     try:
         try:
             df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
         except FileNotFoundError:
             df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
 
-        # Standardize column headers to lower case
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
-        # Verify expected columns exist
+        # Map 'estimate_2021' to 'income_elasticity' if present
+        if "estimate_2021" in df_ifpri_raw.columns:
+            df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
+
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
             df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
             df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
-            # Merge real IFPRI data with our fallback to patch any holes/missing countries
             merged = pd.merge(
                 df_fallback,
                 df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
@@ -345,13 +344,11 @@ def load_ifpri_data(df_merged):
                 suffixes=("_fallback", "_real")
             )
 
-            # Pull in the real data where it exists, otherwise keep fallback
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
             
             return merged[["country", "food_group", "income_elasticity"]]
 
-    except Exception as e:
-        # Silently catch loading errors and proceed with the fallback modeled data
+    except Exception:
         pass
 
     return df_fallback
@@ -618,7 +615,6 @@ with tab2:
         df_broad_goods["country"] == selected_country_tab2
     ].copy()
 
-    # Calculate expenditure if income doubles (+100% income increase)
     country_broad_df["doubled_expenditure"] = country_broad_df["base_budget_share"] * (
         1.0 + country_broad_df["income_elasticity"]
     )
@@ -628,7 +624,6 @@ with tab2:
         country_broad_df["doubled_expenditure"] / total_doubled_expenditure
     ) * 100.0
 
-    # Categorize good type based on elasticity
     def classify_good(e):
         if e < 0:
             return "Inferior Good"
@@ -639,7 +634,6 @@ with tab2:
 
     country_broad_df["good_classification"] = country_broad_df["income_elasticity"].apply(classify_good)
 
-    # Extract food metrics for key callout
     food_row = country_broad_df[country_broad_df["good_type"] == "Food"].iloc[0]
     current_food_pct = food_row["base_budget_share"]
     doubled_food_pct = food_row["doubled_budget_share"]
@@ -795,7 +789,6 @@ with tab3:
         country_ifpri_df["income_elasticity"] * group_income_growth
     )
 
-    # --- BAR CHART (COLORS MATCHED TO TRAPEZOID) ---
     country_ifpri_df_sorted = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
     )
@@ -831,14 +824,12 @@ with tab3:
 
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # --- BENNETT'S LAW TRAPEZOID DIAGRAM ---
     st.markdown("---")
     fig_trapezoid = build_bennett_trapezoid_figure(
         country_ifpri_df, selected_country_ifpri
     )
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
-    # --- INCOME ELASTICITIES TABLE ---
     st.markdown("---")
     st.subheader("Income Elasticities")
 
