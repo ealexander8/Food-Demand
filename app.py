@@ -334,7 +334,9 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities directly from IFPRI file, mapped to CGIAR 9 food groups."""
+    """Loads food subgroup income elasticities directly from IFPRI file, mapped to CGIAR 9 food groups.
+    Ensures that region == 0 is properly assigned to 'World' BEFORE any specification filtering.
+    """
     group_multipliers = {
         1: 1.25,  # Animal-Sourced Food
         2: 0.70,  # Beans, Lentils, Peas & Soy
@@ -352,7 +354,7 @@ def load_ifpri_data(df_merged):
         country = row["country"]
         base_e = float(row.get("income_elasticity_2005", 0.45))
         for fg_id, mult in group_multipliers.items():
-            sub_e = round(max(0.01, base_e * mult), 2)
+            sub_e = round(max(0.01, base_e * mult), 4)
             fallback_records.append(
                 {
                     "country": country,
@@ -363,7 +365,7 @@ def load_ifpri_data(df_merged):
 
     # Always include World fallback
     for fg_id, mult in group_multipliers.items():
-        sub_e = round(max(0.01, 0.45 * mult), 2)
+        sub_e = round(max(0.01, 0.45 * mult), 4)
         fallback_records.append(
             {
                 "country": "World",
@@ -390,32 +392,41 @@ def load_ifpri_data(df_merged):
 
     df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
-    if "estimate_2021" in df_ifpri_raw.columns and "income_elasticity" not in df_ifpri_raw.columns:
-        df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
+    # Flexible column renaming for elasticity and food group
+    e_col = next((c for c in df_ifpri_raw.columns if c in ["income_elasticity", "estimate_2021", "elasticity", "ey", "estimate"]), None)
+    if e_col:
+        df_ifpri_raw = df_ifpri_raw.rename(columns={e_col: "income_elasticity"})
 
-    # Filter specification == 6 specifically
-    if "specification" in df_ifpri_raw.columns:
-        df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
-        spec6_df = df_ifpri_raw[df_ifpri_raw["specification"] == 6].copy()
-        if not spec6_df.empty:
-            df_ifpri_raw = spec6_df
+    fg_col = next((c for c in df_ifpri_raw.columns if c in ["food_group", "foodgroup", "group", "fg"]), None)
+    if fg_col:
+        df_ifpri_raw = df_ifpri_raw.rename(columns={fg_col: "food_group"})
 
-    df_ifpri_raw = df_ifpri_raw.copy()
+    if "country" not in df_ifpri_raw.columns:
+        df_ifpri_raw["country"] = np.nan
 
-    # Region = 0 represents World averages in IFPRI data
+    # Map region == 0 to "World" BEFORE doing specification filtering
     if "region" in df_ifpri_raw.columns:
-        df_ifpri_raw["region"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
-        df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World"
+        df_ifpri_raw["region_num"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
+        df_ifpri_raw.loc[df_ifpri_raw["region_num"] == 0, "country"] = "World"
 
-    if "country" in df_ifpri_raw.columns:
-        df_ifpri_raw["country"] = df_ifpri_raw["country"].fillna("World")
-        df_ifpri_raw.loc[
-            df_ifpri_raw["country"].astype(str).str.strip().isin(["", "nan", "None", "NaN"]),
-            "country",
-        ] = "World"
-        df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
-    else:
-        df_ifpri_raw["country"] = "World"
+    # Filter specification == 6 specifically (allowing region == 0 to bypass spec filter if necessary)
+    if "specification" in df_ifpri_raw.columns:
+        df_ifpri_raw["spec_num"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
+        if "region_num" in df_ifpri_raw.columns:
+            spec_mask = (df_ifpri_raw["spec_num"] == 6) | (df_ifpri_raw["region_num"] == 0)
+        else:
+            spec_mask = df_ifpri_raw["spec_num"] == 6
+
+        spec_df = df_ifpri_raw[spec_mask].copy()
+        if not spec_df.empty:
+            df_ifpri_raw = spec_df
+
+    df_ifpri_raw["country"] = df_ifpri_raw["country"].fillna("World")
+    df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
+    df_ifpri_raw.loc[
+        df_ifpri_raw["country"].isin(["0", "Nan", "None", "", "0.0"]),
+        "country",
+    ] = "World"
 
     if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
         df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
@@ -519,9 +530,9 @@ def build_bennett_trapezoid_figure(country_df, country_name):
                 fill="toself",
                 fillcolor=FOOD_COLOR_MAP.get(g, "#9E9E9E"),
                 line=dict(color="#1A1A1A", width=1.2),
-                name=f"{g_name} (e = {e_val:.2f})",
+                name=f"{g_name} (e = {e_val:.4f})",
                 hovertemplate=(
-                    f"<b>{g_name}</b><br>Elasticity: {e_val:.2f}<br>Income"
+                    f"<b>{g_name}</b><br>Elasticity: {e_val:.4f}<br>Income"
                     " Increase: %{y:.0f}%<extra></extra>"
                 ),
             )
@@ -810,71 +821,84 @@ with tab2:
     st.subheader("Income Elasticity Summary Table")
 
     summary_broad_df = country_broad_df[
-        ["good_type", "income_elasticity", "base_budget_share", "doubled_budget_share", "good_classification"]
+        [
+            "good_type",
+            "income_elasticity",
+            "base_budget_share",
+            "doubled_budget_share",
+            "good_classification",
+        ]
     ].rename(
         columns={
             "good_type": "Category",
-            "income_elasticity": "Income Elasticity",
-            "base_budget_share": "Current Share (%)",
-            "doubled_budget_share": "Doubled Income Share (%)",
-            "good_classification": "Classification",
+            "income_elasticity": "Income Elasticity (e_y)",
+            "base_budget_share": "Current Budget Share (%)",
+            "doubled_budget_share": "Budget Share at Doubled Income (%)",
+            "good_classification": "Good Classification",
         }
     )
 
-    st.dataframe(summary_broad_df, hide_index=True, use_container_width=True)
+    st.dataframe(summary_broad_df, use_container_width=True, hide_index=True)
 
 
 # ==========================================
 # TAB 3: BENNETT'S LAW (FOOD SUBGROUPS)
 # ==========================================
 with tab3:
-    st.header("Bennett's Law: 9 Food Subgroups")
+    st.header("Food Subgroup Elasticities & Dietary Transition (Bennett's Law)")
     st.markdown(
-        "Bennett's Law states that as income grows, the starchy staple ratio decreases while consumption of higher-value, nutrient-dense food groups (such as animal-sourced foods, fruits, vegetables, and food away from home) increases."
+        "**Bennett's Law** observes that as incomes rise, diets transition away from basic starchy staples (grains) toward nutrient-rich, high-value food subgroups like livestock products, fruits, vegetables, and processed foods."
     )
 
-    # Extract all countries including 'World' from IFPRI data
-    countries_tab3 = sorted(df_ifpri["country"].unique().tolist())
-
-    default_tab3_idx = (
-        countries_tab3.index("World")
-        if "World" in countries_tab3
-        else (
-            countries_tab3.index("United States")
-            if "United States" in countries_tab3
-            else 0
-        )
-    )
+    ifpri_countries = sorted(df_ifpri["country"].unique())
+    if "World" in ifpri_countries:
+        ifpri_countries.remove("World")
+        ifpri_countries = ["World"] + ifpri_countries
 
     selected_country_tab3 = st.selectbox(
         "Select Country / Region:",
-        countries_tab3,
-        index=default_tab3_idx,
+        ifpri_countries,
+        index=0,
         key="country_tab3_ifpri",
     )
 
     country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_tab3].copy()
+    country_ifpri_df["food_group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
 
     st.markdown("---")
+    st.subheader(f"📊 IFPRI Elasticities by Food Group for {selected_country_tab3}")
 
-    fig_bennett = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_tab3)
-    st.plotly_chart(fig_bennett, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader(f"Income Elasticity Breakdown for {selected_country_tab3}")
-
-    display_ifpri = country_ifpri_df.copy()
-    display_ifpri["food_group_name"] = display_ifpri["food_group"].map(FOOD_GROUP_MAP)
-    display_ifpri = display_ifpri.sort_values(by="food_group")
-
-    summary_ifpri_df = display_ifpri[
-        ["food_group", "food_group_name", "income_elasticity"]
-    ].rename(
+    display_ifpri = country_ifpri_df[["food_group", "food_group_name", "income_elasticity"]].sort_values("food_group")
+    display_ifpri = display_ifpri.rename(
         columns={
             "food_group": "Group ID",
-            "food_group_name": "Food Group Subcategory",
+            "food_group_name": "Food Group Name",
             "income_elasticity": "Income Elasticity",
         }
     )
 
-    st.dataframe(summary_ifpri_df, hide_index=True, use_container_width=True)
+    col_table, col_chart = st.columns([1, 2])
+
+    with col_table:
+        st.dataframe(
+            display_ifpri.style.format({"Income Elasticity": "{:.4f}"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with col_chart:
+        fig_bar = px.bar(
+            display_ifpri,
+            x="Income Elasticity",
+            y="Food Group Name",
+            orientation="h",
+            color="Food Group Name",
+            color_discrete_map=FOOD_NAME_COLOR_MAP,
+            title=f"Income Elasticities for {selected_country_tab3}",
+        )
+        fig_bar.update_layout(showlegend=False, height=380, yaxis=dict(autorange="reversed"))
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.markdown("---")
+    fig_trapezoid = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_tab3)
+    st.plotly_chart(fig_trapezoid, use_container_width=True)
