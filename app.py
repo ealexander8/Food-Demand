@@ -287,10 +287,9 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities from IFPRI_Food_Elasticities file.
-    Supports 'estimate_2021' or 'income_elasticity' column names, and filters
-    for Specification 6 (Unconditional - income).
-    Falls back to Bennett's Law relative scaling principles if the file is missing.
+    """Loads food subgroup income elasticities directly from IFPRI.xlsx (Harvard Dataverse).
+    Processes columns: region, iso_a3, iso_n3, country, specification, food_group, estimate_2021.
+    Filters for Specification 6 (Unconditional income elasticity) and falls back to Bennett's Law relative scaling if missing.
     """
     group_multipliers = {
         1: 0.50,  # Cereals & Staples
@@ -317,23 +316,30 @@ def load_ifpri_data(df_merged):
                     "income_elasticity": sub_e,
                 }
             )
-    
+
     df_fallback = pd.DataFrame(fallback_records)
 
     try:
         try:
-            df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
+            df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
         except FileNotFoundError:
-            df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
+            try:
+                df_ifpri_raw = pd.read_csv("IFPRI.csv")
+            except FileNotFoundError:
+                try:
+                    df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
+                except FileNotFoundError:
+                    df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
 
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
-        # Map 'estimate_2021' to 'income_elasticity' if present
+        # Map Harvard Dataverse 'estimate_2021' to 'income_elasticity' if present
         if "estimate_2021" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
 
         # FILTER FOR SPECIFICATION 6 (Unconditional - income)
         if "specification" in df_ifpri_raw.columns:
+            df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
@@ -350,7 +356,7 @@ def load_ifpri_data(df_merged):
             )
 
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
-            
+
             return merged[["country", "food_group", "income_elasticity"]]
 
     except Exception:
@@ -895,18 +901,8 @@ with tab3:
             [
                 {
                     "selector": "th",
-                    "props": [
-                        ("text-align", "center !important"),
-                        ("justify-content", "center !important"),
-                    ],
-                },
-                {
-                    "selector": "td",
-                    "props": [
-                        ("text-align", "center !important"),
-                        ("justify-content", "center !important"),
-                    ],
-                },
+                    "props": [("text-align", "center")],
+                }
             ]
         )
         .apply(highlight_food_category, subset=["Food Category"])
@@ -921,16 +917,5 @@ with tab3:
     st.dataframe(
         styled_df,
         hide_index=True,
-        use_container_width=False,
-        column_config={
-            "Food Category": st.column_config.TextColumn(
-                alignment="center", width=220
-            ),
-            "Income Elasticity (Subgroup)": st.column_config.NumberColumn(
-                alignment="center", format="%.2f", width=180
-            ),
-            "Total Growth (%)": st.column_config.TextColumn(
-                alignment="center", width=140
-            ),
-        },
+        use_container_width=True,
     )
