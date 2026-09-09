@@ -12,29 +12,29 @@ st.set_page_config(
     page_title="Food Demand Growth Simulator", page_icon="🌾", layout="wide"
 )
 
-# Tab 3: Food Subgroups (Bennett's Law)
+# Tab 3: Food Subgroups (IFPRI 9 Food Groups / Bennett's Law)
 FOOD_GROUP_MAP = {
-    1: "Cereals & Starchy Staples",
-    2: "Roots, Tubers & Plantains",
-    3: "Pulses, Legumes & Nuts",
-    4: "Vegetables",
-    5: "Fruits",
-    6: "Meat & Poultry",
-    7: "Fish & Seafood",
-    8: "Milk & Dairy",
-    9: "Fats, Oils & Sugars",
+    1: "Animal-Sourced Food",
+    2: "Beans, Lentils, Peas & Soy",
+    3: "Condiments & Sweeteners",
+    4: "Fruits, Vegetables & Nuts",
+    5: "Grains & Starchy Staples",
+    6: "Processed Meals & Snacks",
+    7: "Oils & Fats",
+    8: "Food Away From Home",
+    9: "All Beverages",
 }
 
 FOOD_COLOR_MAP = {
-    1: "#D7CCC8",  # Cereals & Staples
-    2: "#BCAAA4",  # Roots
-    3: "#8D6E63",  # Plant Proteins
-    4: "#2E7D32",  # Vegetables
-    5: "#81C784",  # Fruits
-    6: "#C62828",  # Meat & Poultry
-    7: "#0288D1",  # Fish
-    8: "#7B1FA2",  # Milk & Dairy
-    9: "#FBC02D",  # Sugar, Oils
+    1: "#C62828",  # Animal-Sourced Food (Red)
+    2: "#8D6E63",  # Beans, Lentils, Peas & Soy (Brown)
+    3: "#FBC02D",  # Condiments & Sweeteners (Yellow)
+    4: "#2E7D32",  # Fruits, Vegetables & Nuts (Green)
+    5: "#D7CCC8",  # Grains & Starchy Staples (Beige/Tan)
+    6: "#E65100",  # Processed Meals & Snacks (Deep Orange)
+    7: "#FFB300",  # Oils & Fats (Amber)
+    8: "#7B1FA2",  # Food Away From Home (Purple)
+    9: "#0288D1",  # All Beverages (Blue)
 }
 
 FOOD_NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: FOOD_COLOR_MAP[k] for k in FOOD_GROUP_MAP}
@@ -334,17 +334,17 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities directly from IFPRI file."""
+    """Loads food subgroup income elasticities directly from IFPRI file, mapped to CGIAR 9 food groups."""
     group_multipliers = {
-        1: 0.50,  # Cereals & Staples
-        2: 0.40,  # Roots & Tubers
-        3: 0.70,  # Pulses & Legumes
-        4: 0.95,  # Vegetables
-        5: 1.15,  # Fruits
-        6: 1.30,  # Meat & Poultry
-        7: 1.20,  # Fish & Seafood
-        8: 1.10,  # Milk & Dairy
-        9: 0.80,  # Fats, Oils & Sugars
+        1: 1.25,  # Animal-Sourced Food
+        2: 0.70,  # Beans, Lentils, Peas & Soy
+        3: 0.85,  # Condiments & Sweeteners
+        4: 1.05,  # Fruits, Vegetables & Nuts
+        5: 0.45,  # Grains & Starchy Staples
+        6: 1.30,  # Processed Meals & Snacks
+        7: 0.75,  # Oils & Fats
+        8: 1.40,  # Food Away From Home
+        9: 1.10,  # All Beverages
     }
 
     fallback_records = []
@@ -408,19 +408,19 @@ def load_ifpri_data(df_merged):
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds a stacked trapezoid diagram depicting changing food demand."""
+    """Builds a stacked trapezoid diagram depicting changing food demand across 9 groups."""
     y_levels = np.linspace(0, 100, 50)
 
     baseline_shares = {
-        1: 35.0,
-        2: 12.0,
-        3: 10.0,
-        4: 8.0,
-        5: 6.0,
-        6: 10.0,
-        7: 5.0,
-        8: 8.0,
-        9: 6.0,
+        1: 18.0,  # Animal-Sourced Food
+        2: 8.0,   # Beans, Lentils, Peas & Soy
+        3: 5.0,   # Condiments & Sweeteners
+        4: 14.0,  # Fruits, Vegetables & Nuts
+        5: 32.0,  # Grains & Starchy Staples
+        6: 7.0,   # Processed Meals & Snacks
+        7: 6.0,   # Oils & Fats
+        8: 5.0,   # Food Away From Home
+        9: 5.0,   # All Beverages
     }
 
     country_df_sorted = country_df.sort_values(
@@ -792,7 +792,7 @@ with tab2:
 with tab3:
     st.header("Commodity-Specific Demand Growth (Bennett's Law)")
     st.write(
-        "Explore how demand shifts across 9 distinct food categories using updated elasticities."
+        "Explore how demand shifts across 9 distinct IFPRI food categories using updated CGIAR dataset elasticities."
     )
 
     countries_ifpri = sorted(df_ifpri["country"].unique())
@@ -821,104 +821,87 @@ with tab3:
     else:
         group_pop_growth = 1.20
         wb_income_growth = 2.50
-        group_pop_year = "Recent"
+        group_pop_year = "N/A"
         income_cat = "Unclassified"
 
     with ctrl_col2:
-        st.metric(
-            f"Pop. Growth ({group_pop_year})",
-            f"{group_pop_growth:+.2f}%",
-            help="Most recent annual population growth rate from World Bank API",
+        user_pop_growth = st.number_input(
+            "Population Growth Rate (%)",
+            value=group_pop_growth,
+            step=0.1,
+            format="%.2f",
+            key="tab3_pop_growth",
         )
 
     with ctrl_col3:
-        group_income_growth = st.number_input(
-            "Annual Income Growth (%)",
+        user_inc_growth = st.number_input(
+            "GDP Per Capita Growth Rate (%)",
             value=wb_income_growth,
-            step=0.10,
+            step=0.1,
             format="%.2f",
-            key=f"group_inc_{selected_country_ifpri}",
+            key="tab3_inc_growth",
         )
 
-    country_ifpri_df = df_ifpri[
-        df_ifpri["country"] == selected_country_ifpri
-    ].copy()
-    country_ifpri_df["food_group_name"] = country_ifpri_df["food_group"].map(
-        FOOD_GROUP_MAP
+    country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_ifpri].copy()
+
+    country_ifpri_df["group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
+    country_ifpri_df["pop_contrib"] = user_pop_growth
+    country_ifpri_df["inc_contrib"] = country_ifpri_df["income_elasticity"] * user_inc_growth
+    country_ifpri_df["total_demand_growth"] = (
+        country_ifpri_df["pop_contrib"] + country_ifpri_df["inc_contrib"]
     )
 
-    # Calculate growth and round to 2 decimal places
-    country_ifpri_df["annual_demand_growth"] = (
-        group_pop_growth + (country_ifpri_df["income_elasticity"] * group_income_growth)
-    ).round(2)
-
-    country_ifpri_df_sorted = country_ifpri_df.sort_values(
-        by="annual_demand_growth", ascending=True
-    ).copy()
-
-    # Formatted display labels rounded to the hundredths place
-    country_ifpri_df_sorted["display_growth"] = country_ifpri_df_sorted[
-        "annual_demand_growth"
-    ].apply(lambda x: f"{x:+.2f}%")
+    st.markdown("---")
+    st.subheader(f"📊 Projected Food Group Demand Growth for {selected_country_ifpri}")
 
     fig_bar = px.bar(
-        country_ifpri_df_sorted,
-        x="annual_demand_growth",
-        y="food_group_name",
+        country_ifpri_df.sort_values(by="total_demand_growth", ascending=True),
+        x="total_demand_growth",
+        y="group_name",
         orientation="h",
-        text="display_growth",
-        title=f"Projected Annual Demand Growth (%) by Category in {selected_country_ifpri} ({income_cat})",
+        color="food_group",
+        color_discrete_map=FOOD_COLOR_MAP,
         labels={
-            "annual_demand_growth": "Annual Demand Growth (%)",
-            "food_group_name": "Food Group",
+            "total_demand_growth": "Annual Demand Growth Rate (%)",
+            "group_name": "Food Group",
         },
-        color="food_group_name",
-        color_discrete_map=FOOD_NAME_COLOR_MAP,
+        text_auto=".2f",
     )
-
-    fig_bar.update_traces(textposition="outside")
-    fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
-
     fig_bar.update_layout(
-        height=500,
-        xaxis=dict(
-            title="Predicted Annual Demand Growth (%)",
-            tickformat="+.2f",
-            ticksuffix="%",
-        ),
-        yaxis_title="",
         showlegend=False,
+        height=450,
+        margin=dict(l=20, r=20, t=30, b=20),
     )
-
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
-    fig_trapezoid = build_bennett_trapezoid_figure(
-        country_ifpri_df, selected_country_ifpri
-    )
+    st.subheader("Dietary Transition Structure (Bennett's Law)")
+    fig_trapezoid = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_ifpri)
     st.plotly_chart(fig_trapezoid, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Income Elasticities")
+    st.subheader("Food Group Elasticity & Projected Growth Breakdown")
 
-    summary_ifpri_df = country_ifpri_df[
-        ["food_group_name", "income_elasticity", "annual_demand_growth"]
-    ].rename(
-        columns={
-            "food_group_name": "Food Group",
-            "income_elasticity": "Income Elasticity",
-            "annual_demand_growth": "Annual Demand Growth (%)",
-        }
-    )
+    summary_tab3 = country_ifpri_df[
+        ["food_group", "group_name", "income_elasticity", "total_demand_growth"]
+    ].copy()
+    summary_tab3.columns = [
+        "Group ID",
+        "Food Category",
+        "Income Elasticity (e)",
+        "Projected Demand Growth (%)",
+    ]
 
     st.dataframe(
-        summary_ifpri_df,
+        summary_tab3.sort_values(by="Group ID"),
         column_config={
-            "Food Group": st.column_config.Column("Food Group", alignment="left"),
-            "Income Elasticity": st.column_config.NumberColumn(
-                "Income Elasticity",
-                format="%.2f",
-                alignment="center",
+            "Group ID": st.column_config.NumberColumn("ID", format="%d", alignment="center"),
+            "Food Category": st.column_config.Column("Food Category", alignment="left"),
+            "Income Elasticity (e)": st.column_config.NumberColumn(
+                "Income Elasticity (e)", format="%.2f", alignment="center"
+            ),
+            "Projected Demand Growth (%)": st.column_config.NumberColumn(
+                "Projected Growth (%)", format="%.2f%%", alignment="center"
             ),
         },
         hide_index=True,
