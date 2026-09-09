@@ -6,21 +6,6 @@ import requests
 import streamlit as st
 
 # ==========================================
-# HARDCODED WORLD FOOD GROUP ELASTICITIES (2021)
-# ==========================================
-WORLD_FOOD_GROUP_ELASTICITIES = {
-    1: 0.708945,    # Animal-Sourced Food
-    2: 0.5145576,   # Beans, Lentils, Peas & Soy
-    3: 0.5220307,   # Condiments & Sweeteners
-    4: 0.5771826,   # Fruits, Vegetables & Nuts
-    5: 0.32338026,  # Grains & Starchy Staples
-    6: 0.407696,    # Processed Meals & Snacks
-    7: 0.5460111,   # Oils & Fats
-    8: 1.0183451,   # Food Away From Home
-    9: 0.5897565,   # All Beverages
-}
-
-# ==========================================
 # 1. PAGE CONFIGURATION & GLOBAL COLOR MAPS
 # ==========================================
 st.set_page_config(
@@ -122,6 +107,7 @@ def fetch_latest_world_bank_indicators():
         except Exception as e:
             st.error(f"Error fetching indicator {indicator_code}: {e}")
 
+    # Fetch World Bank income level classifications
     try:
         url_country = "http://api.worldbank.org/v2/country?format=json&per_page=300"
         response_c = requests.get(url_country, timeout=10)
@@ -348,9 +334,7 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities mapped to 9 food groups,
-    hardcoding exact World baseline elasticities.
-    """
+    """Loads food subgroup income elasticities directly from IFPRI file, mapped to CGIAR 9 food groups."""
     group_multipliers = {
         1: 1.25,  # Animal-Sourced Food
         2: 0.70,  # Beans, Lentils, Peas & Soy
@@ -368,7 +352,7 @@ def load_ifpri_data(df_merged):
         country = row["country"]
         base_e = float(row.get("income_elasticity_2005", 0.45))
         for fg_id, mult in group_multipliers.items():
-            sub_e = round(max(0.01, base_e * mult), 4)
+            sub_e = round(max(0.01, base_e * mult), 2)
             fallback_records.append(
                 {
                     "country": country,
@@ -377,13 +361,14 @@ def load_ifpri_data(df_merged):
                 }
             )
 
-    # Always insert exact hardcoded World values
-    for fg_id, e_val in WORLD_FOOD_GROUP_ELASTICITIES.items():
+    # Always include World fallback
+    for fg_id, mult in group_multipliers.items():
+        sub_e = round(max(0.01, 0.45 * mult), 2)
         fallback_records.append(
             {
                 "country": "World",
                 "food_group": fg_id,
-                "income_elasticity": e_val,
+                "income_elasticity": sub_e,
             }
         )
 
@@ -438,6 +423,7 @@ def load_ifpri_data(df_merged):
 
         clean_ifpri = df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]).copy()
 
+        # DEDUPLICATION & AGGREGATION: Guarantee strictly 1 value per (country, food_group) pair
         clean_ifpri = (
             clean_ifpri.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
             .mean()
@@ -457,6 +443,7 @@ def load_ifpri_data(df_merged):
 
         final_df = merged[["country", "food_group", "income_elasticity"]].dropna()
 
+        # Final safety deduplication step
         final_df = (
             final_df.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
             .mean()
@@ -482,6 +469,7 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         9: 5.0,   # All Beverages
     }
 
+    # Ensure strictly one row per food_group
     country_df_unique = (
         country_df.groupby(["food_group"], as_index=False)["income_elasticity"]
         .mean()
@@ -531,9 +519,9 @@ def build_bennett_trapezoid_figure(country_df, country_name):
                 fill="toself",
                 fillcolor=FOOD_COLOR_MAP.get(g, "#9E9E9E"),
                 line=dict(color="#1A1A1A", width=1.2),
-                name=f"{g_name} (e = {e_val:.3f})",
+                name=f"{g_name} (e = {e_val:.2f})",
                 hovertemplate=(
-                    f"<b>{g_name}</b><br>Elasticity: {e_val:.4f}<br>Income"
+                    f"<b>{g_name}</b><br>Elasticity: {e_val:.2f}<br>Income"
                     " Increase: %{y:.0f}%<extra></extra>"
                 ),
             )
@@ -819,59 +807,74 @@ with tab2:
         st.plotly_chart(fig_doubled_broad, use_container_width=True)
 
     st.markdown("---")
-    st.subheader(f"Detailed Expenditure Breakdown for {selected_country_tab2}")
+    st.subheader("Income Elasticity Summary Table")
 
-    table_df = country_broad_df[
+    summary_broad_df = country_broad_df[
         ["good_type", "income_elasticity", "base_budget_share", "doubled_budget_share", "good_classification"]
-    ].copy()
-    table_df.columns = [
-        "Category",
-        "Income Elasticity",
-        "Current Budget Share (%)",
-        "Budget Share at 2x Income (%)",
-        "Classification",
-    ]
-    st.dataframe(table_df, use_container_width=True, hide_index=True)
-
-
-# ==========================================
-# TAB 3: BENNETT'S LAW (9 FOOD SUBGROUPS)
-# ==========================================
-with tab3:
-    st.header("Food Subgroup Elasticities & Bennett's Law")
-    st.markdown(
-        "Bennett's Law describes how dietary composition shifts as income grows: household demand transitions away from basic starchy staples toward high-value foods such as animal proteins, fruits, vegetables, and dining out."
+    ].rename(
+        columns={
+            "good_type": "Category",
+            "income_elasticity": "Income Elasticity",
+            "base_budget_share": "Current Share (%)",
+            "doubled_budget_share": "Doubled Income Share (%)",
+            "good_classification": "Classification",
+        }
     )
 
-    countries_tab3 = sorted(df_ifpri["country"].unique())
-    if "World" in countries_tab3:
-        countries_tab3.remove("World")
-        countries_tab3 = ["World"] + countries_tab3
+    st.dataframe(summary_broad_df, hide_index=True, use_container_width=True)
+
+
+# ==========================================
+# TAB 3: BENNETT'S LAW (FOOD SUBGROUPS)
+# ==========================================
+with tab3:
+    st.header("Bennett's Law: 9 Food Subgroups")
+    st.markdown(
+        "Bennett's Law states that as income grows, the starchy staple ratio decreases while consumption of higher-value, nutrient-dense food groups (such as animal-sourced foods, fruits, vegetables, and food away from home) increases."
+    )
+
+    # Extract all countries including 'World' from IFPRI data
+    countries_tab3 = sorted(df_ifpri["country"].unique().tolist())
+
+    default_tab3_idx = (
+        countries_tab3.index("World")
+        if "World" in countries_tab3
+        else (
+            countries_tab3.index("United States")
+            if "United States" in countries_tab3
+            else 0
+        )
+    )
 
     selected_country_tab3 = st.selectbox(
         "Select Country / Region:",
         countries_tab3,
-        index=0,
+        index=default_tab3_idx,
         key="country_tab3_ifpri",
     )
 
     country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_tab3].copy()
 
-    if country_ifpri_df.empty:
-        country_ifpri_df = df_ifpri[df_ifpri["country"] == "World"].copy()
+    st.markdown("---")
 
-    country_ifpri_df["food_group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
+    fig_bennett = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_tab3)
+    st.plotly_chart(fig_bennett, use_container_width=True)
 
     st.markdown("---")
-    st.subheader(f"Dietary Transition Projection for {selected_country_tab3}")
+    st.subheader(f"Income Elasticity Breakdown for {selected_country_tab3}")
 
-    fig_trapezoid = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_tab3)
-    st.plotly_chart(fig_trapezoid, use_container_width=True)
+    display_ifpri = country_ifpri_df.copy()
+    display_ifpri["food_group_name"] = display_ifpri["food_group"].map(FOOD_GROUP_MAP)
+    display_ifpri = display_ifpri.sort_values(by="food_group")
 
-    st.markdown("---")
-    st.subheader(f"Food Group Income Elasticities ({selected_country_tab3})")
+    summary_ifpri_df = display_ifpri[
+        ["food_group", "food_group_name", "income_elasticity"]
+    ].rename(
+        columns={
+            "food_group": "Group ID",
+            "food_group_name": "Food Group Subcategory",
+            "income_elasticity": "Income Elasticity",
+        }
+    )
 
-    display_ifpri = country_ifpri_df[["food_group", "food_group_name", "income_elasticity"]].copy()
-    display_ifpri.columns = ["Group ID", "Food Group", "Income Elasticity"]
-    display_ifpri = display_ifpri.sort_values(by="Group ID")
-    st.dataframe(display_ifpri, use_container_width=True, hide_index=True)
+    st.dataframe(summary_ifpri_df, hide_index=True, use_container_width=True)
