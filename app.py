@@ -60,7 +60,7 @@ BROAD_GOODS_COLOR_MAP = {
     "House Furnishings & Operations": "#009688", 
     "Medical & Health": "#D32F2F",          
     "Transport & Communication": "#7B1FA2", 
-    "Recreation & Culture": "#FBC02D",      
+    "Recreation & Culture": "#FBC02D",     
     "Education & Other": "#455A64",         
 }
 
@@ -204,7 +204,7 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities from IFPRI.xlsx (Specification 6)."""
+    """Loads food subgroup income elasticities from IFPRI_Food_Elasticities file (Specification 6)."""
     group_multipliers = {
         1: 0.40, 2: 0.30, 3: 0.50, 4: 1.10, 5: 1.30, 6: 1.20, 7: 1.00, 8: 1.15, 9: 0.80,
     }
@@ -218,8 +218,10 @@ def load_ifpri_data(df_merged):
     df_fallback = pd.DataFrame(fallback_records)
 
     try:
-        # Load directly from the new file
-        df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
+        try:
+            df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
+        except FileNotFoundError:
+            df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
 
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
@@ -229,16 +231,8 @@ def load_ifpri_data(df_merged):
         if "specification" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
-        # Explicitly label Region 0 as "World Average"
-        if "region" in df_ifpri_raw.columns:
-            df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World Average"
-
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
-            
-            # Ensure "World Average" retains its proper casing after the .title() cast
-            df_ifpri_raw["country"] = df_ifpri_raw["country"].replace({"World Average": "World Average"})
-            
             df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
             df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
@@ -246,13 +240,12 @@ def load_ifpri_data(df_merged):
                 df_fallback,
                 df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
                 on=["country", "food_group"],
-                how="outer", # Changed to outer so World Average isn't dropped if not in fallback
+                how="left",
                 suffixes=("_fallback", "_real")
             )
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
-            return merged[["country", "food_group", "income_elasticity"]].dropna()
-    except Exception as e:
-        print(f"Failed to load or parse IFPRI.xlsx: {e}")
+            return merged[["country", "food_group", "income_elasticity"]]
+    except Exception:
         pass
 
     return df_fallback
