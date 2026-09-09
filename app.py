@@ -54,14 +54,14 @@ BROAD_GOODS_MAP = {
 
 BROAD_GOODS_COLOR_MAP = {
     "Food": "#2E7D32",                      # Green
-    "Beverages & Tobacco": "#8D6E63",       # Brown
-    "Clothing & Footwear": "#E64A19",        # Deep Orange
-    "Housing": "#1976D2",                    # Blue
-    "House Furnishings & Operations": "#009688", # Teal
-    "Medical & Health": "#D32F2F",          # Red
-    "Transport & Communication": "#7B1FA2", # Purple
-    "Recreation & Culture": "#FBC02D",     # Gold/Yellow
-    "Education & Other": "#455A64",         # Slate Grey
+    "Beverages & Tobacco": "#E0E0E0",       # Light Grey
+    "Clothing & Footwear": "#E0E0E0",        # Light Grey
+    "Housing": "#E0E0E0",                    # Light Grey
+    "House Furnishings & Operations": "#E0E0E0", # Light Grey
+    "Medical & Health": "#E0E0E0",          # Light Grey
+    "Transport & Communication": "#E0E0E0", # Light Grey
+    "Recreation & Culture": "#E0E0E0",     # Light Grey
+    "Education & Other": "#E0E0E0",         # Light Grey
 }
 
 
@@ -629,7 +629,7 @@ with tab2:
     country_broad_df["doubled_expenditure"] = country_broad_df["base_budget_share"] * (
         1.0 + country_broad_df["income_elasticity"]
     )
-    
+
     total_doubled_expenditure = country_broad_df["doubled_expenditure"].sum()
     country_broad_df["doubled_budget_share"] = (
         country_broad_df["doubled_expenditure"] / total_doubled_expenditure
@@ -715,7 +715,7 @@ with tab2:
 
     st.markdown("---")
     st.subheader(f"Table 1(2) Elasticity & Good Type Details for {selected_country_tab2}")
-    
+
     summary_broad_df = country_broad_df[
         ["good_type", "income_elasticity", "good_classification"]
     ].rename(
@@ -890,32 +890,16 @@ with tab3:
                 in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
                 else "#000000"
             )
-            styles.append(
-                f"background-color: {bg_color}; color: {text_color}; text-align: center !important;"
-            )
+            styles.append(f"background-color: {bg_color}; color: {text_color}")
         return styles
 
-    styled_df = (
-        display_df.style.set_properties(**{"text-align": "center"})
-        .set_table_styles(
-            [
-                {
-                    "selector": "th",
-                    "props": [("text-align", "center")],
-                }
-            ]
-        )
-        .apply(highlight_food_category, subset=["Food Category"])
-        .format(
+    st.dataframe(
+        display_df.style.apply(highlight_food_category, subset=["Food Category"]).format(
             {
                 "Income Elasticity (Subgroup)": "{:.2f}",
                 "Total Growth (%)": "{:+.2f}%",
             }
-        )
-    )
-
-    st.dataframe(
-        styled_df,
+        ),
         hide_index=True,
         use_container_width=True,
     )
