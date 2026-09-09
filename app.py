@@ -9,74 +9,48 @@ import streamlit as st
 # 1. PAGE CONFIGURATION & GLOBAL COLOR MAPS
 # ==========================================
 st.set_page_config(
-    page_title="Food Demand Growth Simulator",
-    page_icon="🌾",
-    layout="wide"
+    page_title="Food Demand Growth Simulator", page_icon="🌾", layout="wide"
 )
 
-# Tab 3: Food Subgroups (Bennett's Law)
 FOOD_GROUP_MAP = {
-    1: "Grains & Cereals",
-    2: "Roots & Tubers",
-    3: "Beans, Nuts & Seeds",
-    4: "Milk & Dairy",
-    5: "Meat & Poultry",
-    6: "Fish & Seafood",
-    7: "Eggs",
-    8: "Fruits & Vegetables",
-    9: "Fats & Oils",
+    1: "Cereals & Starchy Staples",
+    2: "Roots, Tubers & Plantains",
+    3: "Pulses, Legumes & Nuts",
+    4: "Vegetables",
+    5: "Fruits",
+    6: "Meat & Poultry",
+    7: "Fish & Seafood",
+    8: "Milk & Dairy",
+    9: "Fats, Oils & Sugars",
 }
 
-FOOD_COLOR_MAP = {
-    1: "#D7CCC8",
-    2: "#BCAAA4",
-    3: "#8D6E63",
-    4: "#64B5F6",
-    5: "#C62828",
-    6: "#0288D1",
-    7: "#FFF176",
-    8: "#2E7D32",
-    9: "#FBC02D",
+COLOR_MAP = {
+    1: "#D7CCC8",  # Cereals & Staples
+    2: "#BCAAA4",  # Roots
+    3: "#8D6E63",  # Plant Proteins
+    4: "#2E7D32",  # Vegetables
+    5: "#81C784",  # Fruits
+    6: "#C62828",  # Meat & Poultry
+    7: "#0288D1",  # Fish
+    8: "#7B1FA2",  # Milk & Dairy
+    9: "#FBC02D",  # Sugar, Oils
 }
 
-FOOD_NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: FOOD_COLOR_MAP[k] for k in FOOD_GROUP_MAP}
-
-# Tab 2: 9 Broad Expenditure Types (USDA Table 1 / Engel's Law)
-BROAD_GOODS_MAP = {
-    1: "Food",
-    2: "Beverages & Tobacco",
-    3: "Clothing & Footwear",
-    4: "Housing",
-    5: "House Furnishings & Operations",
-    6: "Medical & Health",
-    7: "Transport & Communication",
-    8: "Recreation & Culture",
-    9: "Education & Other",
-}
-
-BROAD_GOODS_COLOR_MAP = {
-    "Food": "#2E7D32",                       
-    "Beverages & Tobacco": "#8D6E63",        
-    "Clothing & Footwear": "#E64A19",        
-    "Housing": "#1976D2",                    
-    "House Furnishings & Operations": "#009688", 
-    "Medical & Health": "#D32F2F",           
-    "Transport & Communication": "#7B1FA2", 
-    "Recreation & Culture": "#FBC02D",       
-    "Education & Other": "#455A64",          
-}
+NAME_COLOR_MAP = {FOOD_GROUP_MAP[k]: COLOR_MAP[k] for k in FOOD_GROUP_MAP}
 
 
 # ==========================================
-# 2. DATA LOADERS & LIVE WORLD BANK API
+# 2. LIVE WORLD BANK API & DATA LOADERS
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
-    """Fetches Population Growth and GDP per capita Growth from World Bank API."""
+    """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
+    Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
+    'mrnev=1' parameter (Most Recent Non-Empty Value).
+    """
     indicators = {
         "SP.POP.GROW": ("pop_growth", "pop_year"),
         "NY.GDP.PCAP.KD.ZG": ("income_growth", "income_year"),
-        "NY.GDP.PCAP.CD": ("gdp_per_capita", "gdp_year"),
     }
 
     df_combined = pd.DataFrame()
@@ -101,171 +75,205 @@ def fetch_latest_world_bank_indicators():
                     if df_combined.empty:
                         df_combined = df_ind
                     else:
-                        df_combined = pd.merge(df_combined, df_ind, on="country", how="outer")
-        except Exception:
-            pass
+                        df_combined = pd.merge(
+                            df_combined, df_ind, on="country", how="outer"
+                        )
+        except Exception as e:
+            st.error(f"Error fetching indicator {indicator_code}: {e}")
 
     if not df_combined.empty:
-        df_combined["country"] = df_combined["country"].astype(str).str.strip().str.title()
+        df_combined["country"] = (
+            df_combined["country"].astype(str).str.strip().str.title()
+        )
 
     return df_combined
 
 
 @st.cache_data
 def load_usda_elasticities():
-    """Loads overall food income elasticities."""
+    """Loads income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
+    guaranteeing that all baseline countries (like Afghanistan) exist.
+    """
     usda_base = [
-        {"country": "United States", "income_elasticity_2005": 0.15},
+        {"country": "United States", "income_elasticity_2005": 0.346},
+        {"country": "Afghanistan", "income_elasticity_2005": 0.78},
+        {"country": "Albania", "income_elasticity_2005": 0.48},
+        {"country": "Algeria", "income_elasticity_2005": 0.45},
+        {"country": "Angola", "income_elasticity_2005": 0.75},
+        {"country": "Argentina", "income_elasticity_2005": 0.32},
+        {"country": "Armenia", "income_elasticity_2005": 0.46},
+        {"country": "Australia", "income_elasticity_2005": 0.12},
+        {"country": "Austria", "income_elasticity_2005": 0.11},
+        {"country": "Azerbaijan", "income_elasticity_2005": 0.44},
+        {"country": "Bangladesh", "income_elasticity_2005": 0.72},
+        {"country": "Belarus", "income_elasticity_2005": 0.38},
+        {"country": "Belgium", "income_elasticity_2005": 0.11},
+        {"country": "Benin", "income_elasticity_2005": 0.74},
+        {"country": "Bolivia", "income_elasticity_2005": 0.52},
+        {"country": "Brazil", "income_elasticity_2005": 0.35},
+        {"country": "Canada", "income_elasticity_2005": 0.10},
+        {"country": "Chile", "income_elasticity_2005": 0.24},
         {"country": "China", "income_elasticity_2005": 0.42},
+        {"country": "Colombia", "income_elasticity_2005": 0.38},
+        {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50},
+        {"country": "Ethiopia", "income_elasticity_2005": 0.77},
+        {"country": "France", "income_elasticity_2005": 0.11},
+        {"country": "Germany", "income_elasticity_2005": 0.10},
+        {"country": "Ghana", "income_elasticity_2005": 0.65},
         {"country": "India", "income_elasticity_2005": 0.62},
+        {"country": "Indonesia", "income_elasticity_2005": 0.48},
+        {"country": "Italy", "income_elasticity_2005": 0.13},
+        {"country": "Japan", "income_elasticity_2005": 0.12},
+        {"country": "Kenya", "income_elasticity_2005": 0.68},
+        {"country": "Mexico", "income_elasticity_2005": 0.31},
         {"country": "Nigeria", "income_elasticity_2005": 0.67},
+        {"country": "Pakistan", "income_elasticity_2005": 0.64},
+        {"country": "Peru", "income_elasticity_2005": 0.41},
+        {"country": "Philippines", "income_elasticity_2005": 0.49},
+        {"country": "Poland", "income_elasticity_2005": 0.25},
+        {"country": "Russian Federation", "income_elasticity_2005": 0.33},
+        {"country": "Saudi Arabia", "income_elasticity_2005": 0.22},
+        {"country": "South Africa", "income_elasticity_2005": 0.38},
+        {"country": "Spain", "income_elasticity_2005": 0.14},
+        {"country": "Tanzania", "income_elasticity_2005": 0.75},
+        {"country": "Thailand", "income_elasticity_2005": 0.36},
+        {"country": "Turkiye", "income_elasticity_2005": 0.34},
         {"country": "United Kingdom", "income_elasticity_2005": 0.10},
-        {"country": "Brazil", "income_elasticity_2005": 0.38},
-        {"country": "Germany", "income_elasticity_2005": 0.12},
-        {"country": "Japan", "income_elasticity_2005": 0.14},
-        {"country": "Kenya", "income_elasticity_2005": 0.71},
-        {"country": "Mexico", "income_elasticity_2005": 0.45},
+        {"country": "Viet Nam", "income_elasticity_2005": 0.58},
     ]
     df_base = pd.DataFrame(usda_base)
     df_base["country"] = df_base["country"].astype(str).str.strip().str.title()
 
     try:
         df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
+
         df.columns = [str(c).strip().lower() for c in df.columns]
 
-        country_col = next((c for c in df.columns if "country" in c or "name" in c), df.columns[0])
-        elasticity_col = next((c for c in df.columns if "elasticity" in c or "income" in c or "ey" in c or "food" in c), df.columns[1])
+        country_col = next(
+            (c for c in df.columns if "country" in c or "name" in c),
+            df.columns[0],
+        )
+        elasticity_col = next(
+            (
+                c
+                for c in df.columns
+                if "elasticity" in c or "income" in c or "ey" in c or "food" in c
+            ),
+            df.columns[1],
+        )
 
-        df_cleaned = df.rename(columns={country_col: "country", elasticity_col: "income_elasticity_2005"})
-        df_cleaned["country"] = df_cleaned["country"].astype(str).str.strip().str.title()
-        df_cleaned["income_elasticity_2005"] = pd.to_numeric(df_cleaned["income_elasticity_2005"], errors="coerce")
+        df_cleaned = df.rename(
+            columns={
+                country_col: "country",
+                elasticity_col: "income_elasticity_2005",
+            }
+        )
+        df_cleaned["country"] = (
+            df_cleaned["country"].astype(str).str.strip().str.title()
+        )
+        df_cleaned["income_elasticity_2005"] = pd.to_numeric(
+            df_cleaned["income_elasticity_2005"], errors="coerce"
+        )
+
         df_excel = df_cleaned[["country", "income_elasticity_2005"]].dropna()
 
-        merged_usda = pd.merge(df_base, df_excel, on="country", how="outer", suffixes=("_base", "_excel"))
-        merged_usda["income_elasticity_2005"] = merged_usda["income_elasticity_2005_excel"].fillna(merged_usda["income_elasticity_2005_base"])
+        # Outer join guarantees all base countries (like Afghanistan) are preserved
+        merged_usda = pd.merge(
+            df_base,
+            df_excel,
+            on="country",
+            how="outer",
+            suffixes=("_base", "_excel"),
+        )
+        merged_usda["income_elasticity_2005"] = merged_usda[
+            "income_elasticity_2005_excel"
+        ].fillna(merged_usda["income_elasticity_2005_base"])
         df_result = merged_usda[["country", "income_elasticity_2005"]].dropna()
 
         if not df_result.empty:
             return df_result
-    except Exception:
-        pass
+    except Exception as e:
+        st.info(f"Using default elasticity fallback: {e}")
 
     return df_base
 
 
 @st.cache_data
 def load_merged_data():
-    """Merges World Bank API indicator data with income elasticities."""
+    """Merges the latest World Bank API indicators with Excel Elasticities."""
     df_wb = fetch_latest_world_bank_indicators()
     df_usda = load_usda_elasticities()
 
     if not df_wb.empty:
+        # Use how="left" to keep all USDA countries even if missing from World Bank API
         merged = pd.merge(df_usda, df_wb, on="country", how="left")
         merged["pop_growth"] = merged["pop_growth"].fillna(1.20)
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
-        merged["gdp_per_capita"] = merged["gdp_per_capita"].fillna(12000)
-        merged["pop_year"] = merged["pop_year"].fillna("Recent")
-        merged["income_year"] = merged["income_year"].fillna("Recent")
+        merged["pop_year"] = merged["pop_year"].fillna("Default/Fallback")
+        merged["income_year"] = merged["income_year"].fillna("Default/Fallback")
         return merged
 
     df_usda["pop_growth"] = 1.20
     df_usda["income_growth"] = 2.50
-    df_usda["gdp_per_capita"] = 12000
     df_usda["pop_year"] = "N/A"
     df_usda["income_year"] = "N/A"
     return df_usda
 
 
 @st.cache_data
-def load_table1_broad_categories(df_merged):
-    """Loads 9 broad expenditure categories per country based on Engel's Law principles."""
-    records = []
-    for _, row in df_merged.iterrows():
-        country = row["country"]
-        food_e = float(row.get("income_elasticity_2005", 0.45))
-        base_food_share = max(10.0, min(58.0, food_e * 65.0))
-        rem_share = 100.0 - base_food_share
-
-        categories = [
-            ("Food", food_e, base_food_share),
-            ("Beverages & Tobacco", 0.65, rem_share * 0.06),
-            ("Clothing & Footwear", 0.85, rem_share * 0.08),
-            ("Housing", 1.02, rem_share * 0.26),
-            ("House Furnishings & Operations", 1.05, rem_share * 0.08),
-            ("Medical & Health", 1.15, rem_share * 0.10),
-            ("Transport & Communication", 1.28, rem_share * 0.20),
-            ("Recreation & Culture", 1.35, rem_share * 0.12),
-            ("Education & Other", 1.10, rem_share * 0.10),
-        ]
-
-        for good_name, elasticity, initial_share in categories:
-            records.append({
-                "country": country,
-                "good_type": good_name,
-                "income_elasticity": round(elasticity, 3),
-                "base_budget_share": round(initial_share, 2),
-            })
-    return pd.DataFrame(records)
-
-
-@st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads IFPRI food subgroup elasticity data."""
+    """Generates food subgroup income elasticities for ALL countries in the dataset
+    using Bennett's Law relative scaling principles.
+    """
     group_multipliers = {
-        1: 0.40, 2: 0.30, 3: 0.50, 4: 1.10, 5: 1.30, 6: 1.20, 7: 1.00, 8: 1.15, 9: 0.80,
+        1: 0.50,  # Cereals & Staples
+        2: 0.40,  # Roots & Tubers
+        3: 0.70,  # Pulses & Legumes
+        4: 0.95,  # Vegetables
+        5: 1.15,  # Fruits
+        6: 1.30,  # Meat & Poultry
+        7: 1.20,  # Fish & Seafood
+        8: 1.10,  # Milk & Dairy
+        9: 0.80,  # Fats, Oils & Sugars
     }
-    fallback_records = []
+
+    records = []
     for _, row in df_merged.iterrows():
         country = row["country"]
         base_e = float(row.get("income_elasticity_2005", 0.45))
         for fg_id, mult in group_multipliers.items():
             sub_e = round(max(0.01, base_e * mult), 2)
-            fallback_records.append({"country": country, "food_group": fg_id, "income_elasticity": sub_e})
-    df_fallback = pd.DataFrame(fallback_records)
-
-    try:
-        df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
-
-        df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
-
-        if "estimate_2021" in df_ifpri_raw.columns:
-            df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
-
-        if "specification" in df_ifpri_raw.columns:
-            df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
-
-        if "region" in df_ifpri_raw.columns:
-            df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World Average"
-
-        if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
-            df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
-            df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
-            df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
-
-            merged = pd.merge(
-                df_fallback,
-                df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
-                on=["country", "food_group"],
-                how="outer",
-                suffixes=("_fallback", "_real")
+            records.append(
+                {
+                    "country": country,
+                    "food_group": fg_id,
+                    "income_elasticity": sub_e,
+                }
             )
-            merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
-            return merged[["country", "food_group", "income_elasticity"]].dropna()
-    except Exception:
-        pass
 
-    return df_fallback
+    return pd.DataFrame(records)
 
 
-# ==========================================
-# 3. TRAPEZOID DIAGRAM & STYLING HELPER FUNCTIONS
-# ==========================================
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds a Bennett's Law stacked trapezoid diagram."""
+    """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top)."""
     y_levels = np.linspace(0, 100, 50)
-    baseline_shares = {1: 30.0, 2: 10.0, 3: 8.0, 4: 10.0, 5: 10.0, 6: 5.0, 7: 4.0, 8: 15.0, 9: 8.0}
 
-    country_df_sorted = country_df.sort_values(by="income_elasticity", ascending=False).copy()
+    baseline_shares = {
+        1: 35.0,  # Cereals & Staples
+        2: 12.0,  # Roots & Tubers
+        3: 10.0,  # Plant Proteins / Pulses
+        4: 8.0,  # Vegetables
+        5: 6.0,  # Fruits
+        6: 10.0,  # Meat & Poultry
+        7: 5.0,  # Fish
+        8: 8.0,  # Milk & Dairy
+        9: 6.0,  # Fats, Oils & Sugars
+    }
+
+    country_df_sorted = country_df.sort_values(
+        by="income_elasticity", ascending=False
+    ).copy()
+
     available_groups = country_df_sorted["food_group"].tolist()
 
     quantities = {}
@@ -273,11 +281,14 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         g_id = int(row["food_group"])
         e_y = float(row["income_elasticity"])
         base = baseline_shares.get(g_id, 8.0)
-        quantities[g_id] = [max(0.1, base * (1.0 + e_y * (y / 100.0))) for y in y_levels]
+        quantities[g_id] = [
+            max(0.1, base * (1.0 + e_y * (y / 100.0))) for y in y_levels
+        ]
 
     bottom_total = sum([quantities[g][0] for g in available_groups])
     top_total = sum([quantities[g][-1] for g in available_groups])
-    left_slant = (top_total - bottom_total) / 2.0
+    total_expansion = top_total - bottom_total
+    left_slant = total_expansion / 2.0
 
     cum_x = np.zeros((len(available_groups) + 1, len(y_levels)))
     cum_x[0] = -left_slant * (y_levels / 100.0)
@@ -286,258 +297,385 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         cum_x[idx + 1] = cum_x[idx] + np.array(quantities[g])
 
     fig = go.Figure()
+
     for idx, g in enumerate(available_groups):
         g_name = FOOD_GROUP_MAP.get(g, f"Group {g}")
-        e_val = country_df_sorted.loc[country_df_sorted["food_group"] == g, "income_elasticity"].values[0]
+        e_val = country_df_sorted.loc[
+            country_df_sorted["food_group"] == g, "income_elasticity"
+        ].values[0]
 
-        x_poly = np.concatenate([cum_x[idx], cum_x[idx + 1][::-1]])
+        x_left = cum_x[idx]
+        x_right = cum_x[idx + 1]
+
+        x_poly = np.concatenate([x_left, x_right[::-1]])
         y_poly = np.concatenate([y_levels, y_levels[::-1]])
 
         fig.add_trace(
             go.Scatter(
-                x=x_poly, y=y_poly, fill="toself", fillcolor=FOOD_COLOR_MAP.get(g, "#9E9E9E"),
-                line=dict(color="#1A1A1A", width=1.2), name=f"{g_name} (e = {e_val:.2f})",
-                hovertemplate=f"<b>{g_name}</b><br>Elasticity: {e_val:.2f}<br>Income Increase: %{{y:.0f}}%<extra></extra>",
+                x=x_poly,
+                y=y_poly,
+                fill="toself",
+                fillcolor=COLOR_MAP.get(g, "#9E9E9E"),
+                line=dict(color="#1A1A1A", width=1.2),
+                name=f"{g_name} (e = {e_val:.2f})",
+                hovertemplate=(
+                    f"<b>{g_name}</b><br>Elasticity: {e_val:.2f}<br>Income"
+                    " Increase: %{y:.0f}%<extra></extra>"
+                ),
             )
         )
 
     fig.update_layout(
         title=f"Dietary Transition Trapezoid for {country_name} (Current Income → +100% Income Increase)",
-        xaxis=dict(title="<b>Quantity of Food Consumed (Volume / Share)</b>", showticklabels=False, zeroline=False),
-        yaxis=dict(
-            title="<b>Income Level</b>", tickmode="array", tickvals=[0, 25, 50, 75, 100],
-            ticktext=["Current Income", "+25%", "+50%", "+75%", "+100% Income"], range=[0, 100],
+        xaxis=dict(
+            title="<b>Quantity of Food Consumed (Volume / Share)</b>",
+            showticklabels=False,
+            zeroline=False,
         ),
-        height=540, showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.38, xanchor="center", x=0.5),
+        yaxis=dict(
+            title="<b>Income Level</b>",
+            tickmode="array",
+            tickvals=[0, 25, 50, 75, 100],
+            ticktext=[
+                "Current Income",
+                "+25%",
+                "+50%",
+                "+75%",
+                "+100% Income",
+            ],
+            range=[0, 100],
+        ),
+        height=540,
+        showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.38, xanchor="center", x=0.5
+        ),
         margin=dict(l=40, r=40, t=50, b=90),
     )
+
     return fig
 
 
-def highlight_inferior(val):
-    if isinstance(val, (int, float)) and val < 0:
-        return "color: #D32F2F; font-weight: bold; background-color: #FFEBEE;"
-    return ""
+# Load Datasets
+df_2005 = load_merged_data()
+df_ifpri = load_ifpri_data(df_2005)
 
+# ==========================================
+# 3. APP HEADER & NAVIGATION
+# ==========================================
+st.title("🌾 Food Demand Growth Simulator")
+st.markdown(
+    "Explore how population dynamics and economic growth shape global aggregate food demand and structural dietary transitions."
+)
 
-def highlight_food_category(col):
-    styles = []
-    for val in col:
-        bg_color = FOOD_NAME_COLOR_MAP.get(val, "#FFFFFF")
-        text_color = "#FFFFFF" if bg_color in ["#2E7D32", "#C62828", "#0288D1"] else "#000000"
-        styles.append(f"background-color: {bg_color}; color: {text_color}; text-align: center !important;")
-    return styles
+tab1, tab2 = st.tabs(
+    ["Overview (Aggregate Data)", "Bennett's Law: Food Subgroups"]
+)
 
 
 # ==========================================
-# 4. MAIN APP INITIALIZATION & NAVIGATION
-# ==========================================
-df_merged = load_merged_data()
-df_broad = load_table1_broad_categories(df_merged)
-df_ifpri = load_ifpri_data(df_merged)
-
-st.title("🌾 Food Demand & Consumer Expenditure Growth Simulator")
-st.markdown("An interactive analytical platform modeling food growth trajectories using World Bank indicator data, Engel's Law, and Bennett's Law.")
-
-tab1, tab2, tab3 = st.tabs([
-    "📈 Tab 1: Aggregate Food Demand Growth",
-    "📊 Tab 2: Engel's Law (9 Expenditure Types)",
-    "🥗 Tab 3: Bennett's Law (9 Food Subgroups)"
-])
-
-
-# ==========================================
-# TAB 1: AGGREGATE FOOD DEMAND GROWTH
+# TAB 1: AGGREGATE MODEL
 # ==========================================
 with tab1:
-    st.header("Aggregate Food Demand Growth Model")
+    st.header("Aggregate Food Demand Growth")
     st.markdown(
-        "Food demand growth is driven by **population growth** and **income growth** scaled by the **income elasticity of food demand** ($d = p + e \\cdot y$)."
+        "Select a country to combine baseline food elasticities (from [USDA Data](https://www.ers.usda.gov/data-products/international-food-consumption-patterns)) with the most recent reported World Bank population and GDP per-capita growth rates."
     )
 
-    col1, col2 = st.columns([1, 2])
+    countries_2005 = sorted(df_2005["country"].unique())
+    default_index = (
+        countries_2005.index("United States")
+        if "United States" in countries_2005
+        else 0
+    )
 
-    country_list = sorted(df_merged["country"].unique())
-    
-    with col1:
-        st.subheader("Scenario Parameters")
-        selected_country = st.selectbox("Select Primary Country", country_list, index=country_list.index("United States") if "United States" in country_list else 0, key="t1_country")
-        
-        c_data = df_merged[df_merged["country"] == selected_country].iloc[0]
-        
-        st.caption(f"World Bank Live Data ({c_data['pop_year']}):")
-        pop_g = st.slider("Population Growth Rate (%/yr)", -2.0, 5.0, float(c_data["pop_growth"]), 0.1, key="t1_pop")
-        inc_g = st.slider("GDP per Capita Growth Rate (%/yr)", -2.0, 8.0, float(c_data["income_growth"]), 0.1, key="t1_inc")
-        e_y = st.slider("Income Elasticity of Demand (e)", 0.0, 1.0, float(c_data["income_elasticity_2005"]), 0.01, key="t1_ey")
-        years = st.slider("Projection Horizon (Years)", 5, 30, 10, key="t1_horizon")
+    selected_country_2005 = st.selectbox(
+        "Select Country:",
+        countries_2005,
+        index=default_index,
+        key="country_2005",
+    )
 
-        # Annual and Cumulative Calculations
-        annual_demand_growth = pop_g + (e_y * inc_g)
-        cum_demand_growth = ((1 + annual_demand_growth / 100) ** years - 1) * 100
-        cum_pop_growth = ((1 + pop_g / 100) ** years - 1) * 100
+    country_row = df_2005[df_2005["country"] == selected_country_2005].iloc[0]
+    e_y_2005 = float(country_row["income_elasticity_2005"])
+    pop_growth_recent = float(country_row["pop_growth"])
+    income_growth_recent = float(country_row["income_growth"])
+    pop_year = str(country_row.get("pop_year", "Recent"))
+    income_year = str(country_row.get("income_year", "Recent"))
 
-    with col2:
-        st.subheader(f"Demand Growth Breakdown: {selected_country}")
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Annual Demand Growth", f"{annual_demand_growth:.2f}%")
-        m2.metric(f"Cumulative ({years} yrs)", f"{cum_demand_growth:.1f}%")
-        m3.metric("Pop Contribution", f"{(pop_g / max(annual_demand_growth, 0.001))*100:.1f}%")
-
-        # Growth Decomposition Chart
-        decomp_df = pd.DataFrame({
-            "Component": ["Population Growth", "Income-Driven Growth", "Total Demand Growth"],
-            "Annual Rate (%)": [pop_g, e_y * inc_g, annual_demand_growth]
-        })
-        fig_decomp = px.bar(
-            decomp_df, x="Component", y="Annual Rate (%)", color="Component",
-            title=f"Annual Growth Drivers for {selected_country}", text_auto=".2f",
-            color_discrete_sequence=["#1976D2", "#388E3C", "#F57C00"]
-        )
-        fig_decomp.update_layout(showlegend=False, height=350)
-        st.plotly_chart(fig_decomp, use_container_width=True)
+    pop_contrib = pop_growth_recent
+    inc_contrib = e_y_2005 * income_growth_recent
+    total_growth = pop_contrib + inc_contrib
 
     st.markdown("---")
-    st.subheader("Multi-Country Horizon Trajectory & Global Overview")
-    
-    col_c1, col_c2 = st.columns([1, 1])
-    
-    with col_c1:
-        selected_countries = st.multiselect("Compare Projection Trajectories", country_list, default=[selected_country, "China", "India"] if "China" in country_list and "India" in country_list else [selected_country])
-        
-        proj_records = []
-        for yr in range(0, years + 1):
-            for c_name in selected_countries:
-                row_c = df_merged[df_merged["country"] == c_name].iloc[0]
-                d_rate = row_c["pop_growth"] + (row_c["income_elasticity_2005"] * row_c["income_growth"])
-                idx_val = 100 * ((1 + d_rate / 100) ** yr)
-                proj_records.append({"Year": yr, "Country": c_name, "Demand Index (Base=100)": round(idx_val, 2)})
-        
-        df_proj = pd.DataFrame(proj_records)
-        fig_proj = px.line(
-            df_proj, x="Year", y="Demand Index (Base=100)", color="Country",
-            title=f"Food Demand Index Trajectory Over {years} Years", markers=True
-        )
-        fig_proj.update_layout(height=400)
-        st.plotly_chart(fig_proj, use_container_width=True)
+    st.subheader(f"🌐 Indicators for {selected_country_2005}")
 
-    with col_c2:
-        df_merged["Annual Food Growth (%)"] = df_merged["pop_growth"] + (df_merged["income_elasticity_2005"] * df_merged["income_growth"])
-        fig_map = px.choropleth(
-            df_merged, locations="country", locationmode="country names",
-            color="Annual Food Growth (%)", hover_name="country",
-            title="Global Annual Food Demand Growth Rate (%)",
-            color_continuous_scale="YlGnBu"
-        )
-        fig_map.update_layout(height=400, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_map, use_container_width=True)
+    m1, m2, m3 = st.columns(3)
+    m1.metric(
+        f"Pop. Growth ({pop_year})",
+        f"{pop_growth_recent:+.2f}%",
+        help="Most recent annual population growth rate from World Bank API",
+    )
+    m2.metric(
+        f"GDP/Cap Growth ({income_year})",
+        f"{income_growth_recent:+.2f}%",
+        help="Most recent annual per capita GDP growth rate from World Bank API",
+    )
+    m3.metric(
+        "Income Elasticity of Food Demand",
+        f"{e_y_2005:.3f}",
+        help="Loaded from USDA Data",
+    )
+
+    st.markdown("---")
+    st.metric(
+        label=f"Projected Annual Food Demand Growth for {selected_country_2005}",
+        value=f"{total_growth:+.2f}%",
+    )
+
+    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style="font-size: 1.15rem; line-height: 1.7; background-color: rgba(128, 128, 128, 0.08); padding: 16px; border-radius: 8px;">
+            <strong>Formula:</strong><br>
+            <span>Total Food Demand Growth = Population Growth + (Income Elasticity of Food Demand × Per Capita GDP Growth)</span>
+            <br><br>
+            <strong>Calculation:</strong><br>
+            <span style="font-size: 1.35rem; font-weight: bold; color: #0083B0;">
+                {total_growth:+.2f}% = {pop_contrib:+.2f}% + ({e_y_2005:.3f} × {income_growth_recent:+.2f}%)
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    st.subheader(f"Growth Drivers Breakdown ({selected_country_2005})")
+
+    driver_df = pd.DataFrame(
+        {
+            "Driver": ["Population Growth", "Income Growth"],
+            "Growth_Rate": [max(0.0, pop_contrib), max(0.0, inc_contrib)],
+        }
+    )
+
+    fig_driver = px.pie(
+        driver_df,
+        values="Growth_Rate",
+        names="Driver",
+        hole=0.4,
+        color="Driver",
+        color_discrete_map={
+            "Population Growth": "#2b5c8f",
+            "Income Growth": "#46a040",
+        },
+    )
+    fig_driver.update_traces(
+        textinfo="percent+label",
+        hovertemplate="%{label}: %{value:+.2f}% points",
+    )
+    fig_driver.update_layout(
+        showlegend=False,
+        height=380,
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(fig_driver, use_container_width=True)
 
 
 # ==========================================
-# TAB 2: ENGEL'S LAW (9 BROAD EXPENDITURE TYPES)
+# TAB 2: BENNETT'S LAW: FOOD SUBGROUPS
 # ==========================================
 with tab2:
-    st.header("Engel's Law: 9 Broad Expenditure Categories")
-    st.markdown(
-        "**Engel's Law** states that as income increases, the proportion of income spent on food decreases, even if total food expenditure rises."
+    st.header("Commodity-Specific Demand Growth (Bennett's Law)")
+    st.write(
+        "Explore how demand shifts across 9 distinct food categories using updated elasticities."
     )
 
-    col1, col2 = st.columns([1, 2])
+    countries_ifpri = sorted(df_ifpri["country"].unique())
+    default_tab2_index = (
+        countries_ifpri.index("United States")
+        if "United States" in countries_ifpri
+        else 0
+    )
 
-    with col1:
-        st.subheader("Income Simulation")
-        selected_country_t2 = st.selectbox("Select Country", country_list, index=country_list.index("United States") if "United States" in country_list else 0, key="t2_country")
-        
-        inc_increase = st.slider("Simulated Per Capita Income Increase (%)", 0, 300, 100, 10, key="t2_inc_slider")
-        
-        country_broad_df = df_broad[df_broad["country"] == selected_country_t2].copy()
-        
-        # Recalculate simulated shares based on elasticities
-        country_broad_df["raw_sim_share"] = country_broad_df["base_budget_share"] * (1 + country_broad_df["income_elasticity"] * (inc_increase / 100.0))
-        total_raw = country_broad_df["raw_sim_share"].sum()
-        country_broad_df["simulated_budget_share"] = (country_broad_df["raw_sim_share"] / total_raw) * 100
-        country_broad_df["share_change"] = country_broad_df["simulated_budget_share"] - country_broad_df["base_budget_share"]
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
 
-    with col2:
-        st.subheader(f"Budget Share Shift for {selected_country_t2} (+{inc_increase}% Income)")
-        
-        melted_df = country_broad_df.melt(
-            id_vars=["good_type"], value_vars=["base_budget_share", "simulated_budget_share"],
-            var_name="Scenario", value_name="Budget Share (%)"
+    with ctrl_col1:
+        selected_country_ifpri = st.selectbox(
+            "Select Country / Region:",
+            countries_ifpri,
+            index=default_tab2_index,
+            key="country_ifpri",
         )
-        melted_df["Scenario"] = melted_df["Scenario"].map({"base_budget_share": "Baseline Share", "simulated_budget_share": "Simulated Share"})
 
-        fig_broad = px.bar(
-            melted_df, x="good_type", y="Budget Share (%)", color="Scenario", barmode="group",
-            color_discrete_sequence=["#1976D2", "#388E3C"], text_auto=".1f"
+    wb_match = df_2005[df_2005["country"] == selected_country_ifpri]
+    if not wb_match.empty:
+        group_pop_growth = float(wb_match.iloc[0]["pop_growth"])
+        wb_income_growth = float(wb_match.iloc[0]["income_growth"])
+        group_pop_year = str(wb_match.iloc[0].get("pop_year", "Recent"))
+    else:
+        group_pop_growth = 1.20
+        wb_income_growth = 2.50
+        group_pop_year = "Recent"
+
+    with ctrl_col2:
+        st.metric(
+            f"Pop. Growth ({group_pop_year})",
+            f"{group_pop_growth:+.2f}%",
+            help="Most recent annual population growth rate from World Bank API",
         )
-        fig_broad.update_layout(xaxis_title="", height=400, legend=dict(orientation="h", y=1.1))
-        st.plotly_chart(fig_broad, use_container_width=True)
 
+    with ctrl_col3:
+        group_income_growth = st.number_input(
+            "Annual Income Growth (%)",
+            value=wb_income_growth,
+            step=0.10,
+            format="%.2f",
+            key=f"group_inc_{selected_country_ifpri}",
+        )
+
+    country_ifpri_df = df_ifpri[
+        df_ifpri["country"] == selected_country_ifpri
+    ].copy()
+    country_ifpri_df["food_group_name"] = country_ifpri_df["food_group"].map(
+        FOOD_GROUP_MAP
+    )
+
+    country_ifpri_df["annual_demand_growth"] = group_pop_growth + (
+        country_ifpri_df["income_elasticity"] * group_income_growth
+    )
+
+    # --- BAR CHART (COLORS MATCHED TO TRAPEZOID) ---
+    country_ifpri_df_sorted = country_ifpri_df.sort_values(
+        by="annual_demand_growth", ascending=True
+    )
+
+    fig_bar = px.bar(
+        country_ifpri_df_sorted,
+        x="annual_demand_growth",
+        y="food_group_name",
+        orientation="h",
+        text="annual_demand_growth",
+        title=f"Projected Annual Demand Growth (%) by Category in {selected_country_ifpri}",
+        labels={
+            "annual_demand_growth": "Annual Demand Growth (%)",
+            "food_group_name": "Food Group",
+        },
+        color="food_group_name",
+        color_discrete_map=NAME_COLOR_MAP,
+    )
+
+    # UPDATED: Use explicit + or - formatting for the bar labels
+    fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
+    fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
+    
+    # UPDATED: Apply explicit + or - formatting to the x-axis
+    fig_bar.update_layout(
+        height=500,
+        xaxis=dict(
+            title="Predicted Annual Demand Growth (%)",
+            tickformat="+.2f",
+            ticksuffix="%"
+        ),
+        yaxis_title="",
+        showlegend=False,
+    )
+
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    # --- BENNETT'S LAW TRAPEZOID DIAGRAM ---
     st.markdown("---")
-    st.subheader("Cross-Country Engel Curve Scatter Plot")
-    
-    # Scatter Plot showing Engel's Law across countries
-    df_merged["Base Food Share (%)"] = df_merged["income_elasticity_2005"].apply(lambda e: max(10.0, min(58.0, e * 65.0)))
-    
-    fig_engel_scatter = px.scatter(
-        df_merged, x="gdp_per_capita", y="Base Food Share (%)", text="country", size="pop_growth",
-        color="income_elasticity_2005", color_continuous_scale="Viridis",
-        log_x=True, title="Food Budget Share vs. GDP Per Capita (Engel Curve Pattern)",
-        labels={"gdp_per_capita": "GDP Per Capita (USD, Log Scale)", "income_elasticity_2005": "Food Elasticity (e)"}
+    fig_trapezoid = build_bennett_trapezoid_figure(
+        country_ifpri_df, selected_country_ifpri
     )
-    fig_engel_scatter.update_traces(textposition="top center")
-    fig_engel_scatter.update_layout(height=450)
-    st.plotly_chart(fig_engel_scatter, use_container_width=True)
+    st.plotly_chart(fig_trapezoid, use_container_width=True)
 
+    # --- INCOME ELASTICITIES TABLE ---
+    st.markdown("---")
+    st.subheader("Income Elasticities")
 
-# ==========================================
-# TAB 3: BENNETT'S LAW (9 FOOD SUBGROUPS)
-# ==========================================
-with tab3:
-    st.header("Bennett's Law: 9 Food Subgroups & Dietary Transition")
+    # CSS to force center alignment on all dataframe column headers and data cells
     st.markdown(
-        "**Bennett's Law** states that as incomes rise, consumers shift away from starchy staples (grains/tubers) toward high-value foods (meats, dairy, fruits, vegetables)."
+        """
+        <style>
+        [data-testid="stDataFrame"] [role="columnheader"] {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        [data-testid="stDataFrame"] [role="columnheader"] * {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td {
+            text-align: center !important;
+        }
+        [data-testid="stDataFrame"] th > div, [data-testid="stDataFrame"] td > div {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
 
-    t3_country = st.selectbox("Select Country for Dietary Analysis", country_list, index=country_list.index("United States") if "United States" in country_list else 0, key="t3_country")
-
-    c_ifpri_df = df_ifpri[df_ifpri["country"] == t3_country].copy()
-    if c_ifpri_df.empty:
-        c_ifpri_df = df_ifpri[df_ifpri["country"] == "World Average"].copy()
-        st.warning(f"Using World Average data for {t3_country}.")
-
-    c_ifpri_df["Food Category"] = c_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
-
-    col_b1, col_b2 = st.columns([1.2, 1])
-
-    with col_b1:
-        st.subheader("Bennett's Law Dietary Transition Diagram")
-        fig_trap = build_bennett_trapezoid_figure(c_ifpri_df, t3_country)
-        st.plotly_chart(fig_trap, use_container_width=True)
-
-    with col_b2:
-        st.subheader("Subgroup Elasticity Spectrum")
-        c_ifpri_df_sorted = c_ifpri_df.sort_values(by="income_elasticity", ascending=True)
-        
-        fig_sub_bar = px.bar(
-            c_ifpri_df_sorted, y="Food Category", x="income_elasticity", orientation="h",
-            color="Food Category", color_discrete_map=FOOD_NAME_COLOR_MAP,
-            text_auto=".2f", title=f"Food Subgroup Income Elasticities ({t3_country})"
+    display_df = (
+        country_ifpri_df.sort_values("income_elasticity", ascending=False)[
+            ["food_group_name", "income_elasticity", "annual_demand_growth"]
+        ]
+        .rename(
+            columns={
+                "food_group_name": "Food Category",
+                "income_elasticity": "Income Elasticity (Subgroup)",
+                "annual_demand_growth": "Total Growth (%)",
+            }
         )
-        fig_sub_bar.add_vline(x=0.0, line_dash="solid", line_color="red", annotation_text="Inferior (e < 0)")
-        fig_sub_bar.add_vline(x=1.0, line_dash="dash", line_color="gray", annotation_text="Luxury Threshold (e = 1)")
-        fig_sub_bar.update_layout(showlegend=False, height=480, xaxis_title="Income Elasticity (e)")
-        st.plotly_chart(fig_sub_bar, use_container_width=True)
+    )
 
-    st.subheader("Detailed Subgroup Elasticity Table")
-    
-    display_df = c_ifpri_df[["food_group", "Food Category", "income_elasticity"]].rename(
-        columns={"food_group": "Group ID", "income_elasticity": "Income Elasticity (e)"}
-    ).sort_values(by="Group ID")
+    def highlight_food_category(col):
+        styles = []
+        for val in col:
+            bg_color = NAME_COLOR_MAP.get(val, "#FFFFFF")
+            text_color = (
+                "#FFFFFF"
+                if bg_color in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
+                else "#000000"
+            )
+            styles.append(
+                f"background-color: {bg_color}; color: {text_color}; text-align: center !important;"
+            )
+        return styles
 
-    styled_df = display_df.style.apply(highlight_food_category, subset=["Food Category"])\
-                               .applymap(highlight_inferior, subset=["Income Elasticity (e)"])\
-                               .format({"Income Elasticity (e)": "{:.2f}"})
+    # UPDATED: Use explicit + or - formatting for Total Growth column
+    styled_df = (
+        display_df.style
+        .set_properties(**{"text-align": "center"})
+        .set_table_styles([
+            {"selector": "th", "props": [("text-align", "center !important"), ("justify-content", "center !important")]},
+            {"selector": "td", "props": [("text-align", "center !important"), ("justify-content", "center !important")]}
+        ])
+        .apply(highlight_food_category, subset=["Food Category"])
+        .format(
+            {
+                "Income Elasticity (Subgroup)": "{:.2f}",
+                "Total Growth (%)": "{:+.2f}%", 
+            }
+        )
+    )
 
-    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+    # Render narrow, left-aligned table with centered headers and cells
+    st.dataframe(
+        styled_df,
+        hide_index=True,
+        use_container_width=False,
+        column_config={
+            "Food Category": st.column_config.TextColumn(
+                alignment="center", width=220
+            ),
+            "Income Elasticity (Subgroup)": st.column_config.NumberColumn(
+                alignment="center", format="%.2f", width=180
+            ),
+            "Total Growth (%)": st.column_config.TextColumn(
+                alignment="center", width=140
+            ),
+        },
+    )
