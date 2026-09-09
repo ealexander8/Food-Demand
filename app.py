@@ -71,9 +71,8 @@ BROAD_GOODS_COLOR_MAP = {
 # ==========================================
 @st.cache_data(ttl=86400)
 def fetch_latest_world_bank_indicators():
-    """Fetches the most recent non-empty Population Growth (SP.POP.GROW) and
-    Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG) from the World Bank API using the
-    'mrnev=1' parameter (Most Recent Non-Empty Value).
+    """Fetches Population Growth (SP.POP.GROW), Per Capita GDP Growth (NY.GDP.PCAP.KD.ZG),
+    and Country Income Group classifications from the World Bank API.
     """
     indicators = {
         "SP.POP.GROW": ("pop_growth", "pop_year"),
@@ -108,6 +107,40 @@ def fetch_latest_world_bank_indicators():
         except Exception as e:
             st.error(f"Error fetching indicator {indicator_code}: {e}")
 
+    # Fetch World Bank income level classifications
+    try:
+        url_country = "http://api.worldbank.org/v2/country?format=json&per_page=300"
+        response_c = requests.get(url_country, timeout=10)
+        if response_c.status_code == 200:
+            json_c = response_c.json()
+            if len(json_c) > 1 and json_c[1]:
+                inc_records = [
+                    {
+                        "country": item["name"],
+                        "income_group": item["incomeLevel"]["value"],
+                    }
+                    for item in json_c[1]
+                    if item.get("incomeLevel") and item["incomeLevel"].get("value")
+                ]
+                df_inc = pd.DataFrame(inc_records)
+                if not df_combined.empty:
+                    df_combined["country_clean"] = (
+                        df_combined["country"].astype(str).str.strip().str.title()
+                    )
+                    df_inc["country_clean"] = (
+                        df_inc["country"].astype(str).str.strip().str.title()
+                    )
+                    df_combined = pd.merge(
+                        df_combined,
+                        df_inc[["country_clean", "income_group"]],
+                        on="country_clean",
+                        how="left",
+                    ).drop(columns=["country_clean"])
+                else:
+                    df_combined = df_inc
+    except Exception as e:
+        st.error(f"Error fetching income categories: {e}")
+
     if not df_combined.empty:
         df_combined["country"] = (
             df_combined["country"].astype(str).str.strip().str.title()
@@ -119,54 +152,54 @@ def fetch_latest_world_bank_indicators():
 @st.cache_data
 def load_usda_elasticities():
     """Loads overall food income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
-    guaranteeing that baseline countries exist.
+    guaranteeing that baseline countries exist with income categories.
     """
     usda_base = [
-        {"country": "United States", "income_elasticity_2005": 0.346},
-        {"country": "Afghanistan", "income_elasticity_2005": 0.78},
-        {"country": "Albania", "income_elasticity_2005": 0.48},
-        {"country": "Algeria", "income_elasticity_2005": 0.45},
-        {"country": "Angola", "income_elasticity_2005": 0.75},
-        {"country": "Argentina", "income_elasticity_2005": 0.32},
-        {"country": "Armenia", "income_elasticity_2005": 0.46},
-        {"country": "Australia", "income_elasticity_2005": 0.12},
-        {"country": "Austria", "income_elasticity_2005": 0.11},
-        {"country": "Azerbaijan", "income_elasticity_2005": 0.44},
-        {"country": "Bangladesh", "income_elasticity_2005": 0.72},
-        {"country": "Belarus", "income_elasticity_2005": 0.38},
-        {"country": "Belgium", "income_elasticity_2005": 0.11},
-        {"country": "Benin", "income_elasticity_2005": 0.74},
-        {"country": "Bolivia", "income_elasticity_2005": 0.52},
-        {"country": "Brazil", "income_elasticity_2005": 0.35},
-        {"country": "Canada", "income_elasticity_2005": 0.10},
-        {"country": "Chile", "income_elasticity_2005": 0.24},
-        {"country": "China", "income_elasticity_2005": 0.42},
-        {"country": "Colombia", "income_elasticity_2005": 0.38},
-        {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50},
-        {"country": "Ethiopia", "income_elasticity_2005": 0.77},
-        {"country": "France", "income_elasticity_2005": 0.11},
-        {"country": "Germany", "income_elasticity_2005": 0.10},
-        {"country": "Ghana", "income_elasticity_2005": 0.65},
-        {"country": "India", "income_elasticity_2005": 0.62},
-        {"country": "Indonesia", "income_elasticity_2005": 0.48},
-        {"country": "Italy", "income_elasticity_2005": 0.13},
-        {"country": "Japan", "income_elasticity_2005": 0.12},
-        {"country": "Kenya", "income_elasticity_2005": 0.68},
-        {"country": "Mexico", "income_elasticity_2005": 0.31},
-        {"country": "Nigeria", "income_elasticity_2005": 0.67},
-        {"country": "Pakistan", "income_elasticity_2005": 0.64},
-        {"country": "Peru", "income_elasticity_2005": 0.41},
-        {"country": "Philippines", "income_elasticity_2005": 0.49},
-        {"country": "Poland", "income_elasticity_2005": 0.25},
-        {"country": "Russian Federation", "income_elasticity_2005": 0.33},
-        {"country": "Saudi Arabia", "income_elasticity_2005": 0.22},
-        {"country": "South Africa", "income_elasticity_2005": 0.38},
-        {"country": "Spain", "income_elasticity_2005": 0.14},
-        {"country": "Tanzania", "income_elasticity_2005": 0.75},
-        {"country": "Thailand", "income_elasticity_2005": 0.36},
-        {"country": "Turkiye", "income_elasticity_2005": 0.34},
-        {"country": "United Kingdom", "income_elasticity_2005": 0.10},
-        {"country": "Viet Nam", "income_elasticity_2005": 0.58},
+        {"country": "United States", "income_elasticity_2005": 0.346, "income_group": "High income"},
+        {"country": "Afghanistan", "income_elasticity_2005": 0.78, "income_group": "Low income"},
+        {"country": "Albania", "income_elasticity_2005": 0.48, "income_group": "Upper middle income"},
+        {"country": "Algeria", "income_elasticity_2005": 0.45, "income_group": "Upper middle income"},
+        {"country": "Angola", "income_elasticity_2005": 0.75, "income_group": "Lower middle income"},
+        {"country": "Argentina", "income_elasticity_2005": 0.32, "income_group": "Upper middle income"},
+        {"country": "Armenia", "income_elasticity_2005": 0.46, "income_group": "Upper middle income"},
+        {"country": "Australia", "income_elasticity_2005": 0.12, "income_group": "High income"},
+        {"country": "Austria", "income_elasticity_2005": 0.11, "income_group": "High income"},
+        {"country": "Azerbaijan", "income_elasticity_2005": 0.44, "income_group": "Upper middle income"},
+        {"country": "Bangladesh", "income_elasticity_2005": 0.72, "income_group": "Lower middle income"},
+        {"country": "Belarus", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
+        {"country": "Belgium", "income_elasticity_2005": 0.11, "income_group": "High income"},
+        {"country": "Benin", "income_elasticity_2005": 0.74, "income_group": "Lower middle income"},
+        {"country": "Bolivia", "income_elasticity_2005": 0.52, "income_group": "Lower middle income"},
+        {"country": "Brazil", "income_elasticity_2005": 0.35, "income_group": "Upper middle income"},
+        {"country": "Canada", "income_elasticity_2005": 0.10, "income_group": "High income"},
+        {"country": "Chile", "income_elasticity_2005": 0.24, "income_group": "High income"},
+        {"country": "China", "income_elasticity_2005": 0.42, "income_group": "Upper middle income"},
+        {"country": "Colombia", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
+        {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50, "income_group": "Lower middle income"},
+        {"country": "Ethiopia", "income_elasticity_2005": 0.77, "income_group": "Low income"},
+        {"country": "France", "income_elasticity_2005": 0.11, "income_group": "High income"},
+        {"country": "Germany", "income_elasticity_2005": 0.10, "income_group": "High income"},
+        {"country": "Ghana", "income_elasticity_2005": 0.65, "income_group": "Lower middle income"},
+        {"country": "India", "income_elasticity_2005": 0.62, "income_group": "Lower middle income"},
+        {"country": "Indonesia", "income_elasticity_2005": 0.48, "income_group": "Upper middle income"},
+        {"country": "Italy", "income_elasticity_2005": 0.13, "income_group": "High income"},
+        {"country": "Japan", "income_elasticity_2005": 0.12, "income_group": "High income"},
+        {"country": "Kenya", "income_elasticity_2005": 0.68, "income_group": "Lower middle income"},
+        {"country": "Mexico", "income_elasticity_2005": 0.31, "income_group": "Upper middle income"},
+        {"country": "Nigeria", "income_elasticity_2005": 0.67, "income_group": "Lower middle income"},
+        {"country": "Pakistan", "income_elasticity_2005": 0.64, "income_group": "Lower middle income"},
+        {"country": "Peru", "income_elasticity_2005": 0.41, "income_group": "Upper middle income"},
+        {"country": "Philippines", "income_elasticity_2005": 0.49, "income_group": "Lower middle income"},
+        {"country": "Poland", "income_elasticity_2005": 0.25, "income_group": "High income"},
+        {"country": "Russian Federation", "income_elasticity_2005": 0.33, "income_group": "High income"},
+        {"country": "Saudi Arabia", "income_elasticity_2005": 0.22, "income_group": "High income"},
+        {"country": "South Africa", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
+        {"country": "Spain", "income_elasticity_2005": 0.14, "income_group": "High income"},
+        {"country": "Tanzania", "income_elasticity_2005": 0.75, "income_group": "Lower middle income"},
+        {"country": "Thailand", "income_elasticity_2005": 0.36, "income_group": "Upper middle income"},
+        {"country": "Turkiye", "income_elasticity_2005": 0.34, "income_group": "Upper middle income"},
+        {"country": "United Kingdom", "income_elasticity_2005": 0.10, "income_group": "High income"},
+        {"country": "Viet Nam", "income_elasticity_2005": 0.58, "income_group": "Lower middle income"},
     ]
     df_base = pd.DataFrame(usda_base)
     df_base["country"] = df_base["country"].astype(str).str.strip().str.title()
@@ -214,7 +247,9 @@ def load_usda_elasticities():
         merged_usda["income_elasticity_2005"] = merged_usda[
             "income_elasticity_2005_excel"
         ].fillna(merged_usda["income_elasticity_2005_base"])
-        df_result = merged_usda[["country", "income_elasticity_2005"]].dropna()
+        df_result = merged_usda[
+            ["country", "income_elasticity_2005", "income_group"]
+        ].dropna(subset=["country", "income_elasticity_2005"])
 
         if not df_result.empty:
             return df_result
@@ -236,8 +271,23 @@ def load_merged_data():
         merged["income_growth"] = merged["income_growth"].fillna(2.50)
         merged["pop_year"] = merged["pop_year"].fillna("Default/Fallback")
         merged["income_year"] = merged["income_year"].fillna("Default/Fallback")
+
+        if "income_group_y" in merged.columns and "income_group_x" in merged.columns:
+            merged["income_group"] = (
+                merged["income_group_y"]
+                .fillna(merged["income_group_x"])
+                .fillna("Unclassified")
+            )
+            merged = merged.drop(columns=["income_group_x", "income_group_y"])
+        elif "income_group" in merged.columns:
+            merged["income_group"] = merged["income_group"].fillna("Unclassified")
+        else:
+            merged["income_group"] = "Unclassified"
+
         return merged
 
+    if "income_group" not in df_usda.columns:
+        df_usda["income_group"] = "Unclassified"
     df_usda["pop_growth"] = 1.20
     df_usda["income_growth"] = 2.50
     df_usda["pop_year"] = "N/A"
@@ -247,11 +297,7 @@ def load_merged_data():
 
 @st.cache_data
 def load_table1_broad_categories(df_merged):
-    """Loads or models the 9 broad consumption good types from USDA Table 1(2).
-    Categories: Food, Beverages & tobacco, Clothing & footwear, Housing,
-    House furnishings, Medical & health, Transport & communication,
-    Recreation & culture, Education & other.
-    """
+    """Loads or models the 9 broad consumption good types from USDA Table 1(2)."""
     records = []
 
     for _, row in df_merged.iterrows():
@@ -288,10 +334,7 @@ def load_table1_broad_categories(df_merged):
 
 @st.cache_data
 def load_ifpri_data(df_merged):
-    """Loads food subgroup income elasticities directly from IFPRI.xlsx (Harvard Dataverse).
-    Processes columns: region, iso_a3, iso_n3, country, specification, food_group, estimate_2021.
-    Filters for Specification 6 (Unconditional income elasticity) and falls back to Bennett's Law relative scaling if missing.
-    """
+    """Loads food subgroup income elasticities directly from IFPRI file."""
     group_multipliers = {
         1: 0.50,  # Cereals & Staples
         2: 0.40,  # Roots & Tubers
@@ -334,11 +377,9 @@ def load_ifpri_data(df_merged):
 
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
-        # Map Harvard Dataverse 'estimate_2021' to 'income_elasticity' if present
         if "estimate_2021" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
 
-        # FILTER FOR SPECIFICATION 6 (Unconditional - income)
         if "specification" in df_ifpri_raw.columns:
             df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
@@ -367,19 +408,19 @@ def load_ifpri_data(df_merged):
 
 
 def build_bennett_trapezoid_figure(country_df, country_name):
-    """Builds a stacked trapezoid diagram depicting changing food demand as income grows from Current Income (bottom) to +100% Income Increase (top)."""
+    """Builds a stacked trapezoid diagram depicting changing food demand."""
     y_levels = np.linspace(0, 100, 50)
 
     baseline_shares = {
-        1: 35.0,  # Cereals & Staples
-        2: 12.0,  # Roots & Tubers
-        3: 10.0,  # Plant Proteins / Pulses
-        4: 8.0,   # Vegetables
-        5: 6.0,   # Fruits
-        6: 10.0,  # Meat & Poultry
-        7: 5.0,   # Fish
-        8: 8.0,   # Milk & Dairy
-        9: 6.0,   # Fats, Oils & Sugars
+        1: 35.0,
+        2: 12.0,
+        3: 10.0,
+        4: 8.0,
+        5: 6.0,
+        6: 10.0,
+        7: 5.0,
+        8: 8.0,
+        9: 6.0,
     }
 
     country_df_sorted = country_df.sort_values(
@@ -689,7 +730,7 @@ with tab2:
         fig_current_broad.update_traces(
             textinfo="percent+label",
             hovertemplate="<b>%{label}</b><br>Current Share: %{value:.1f}%<extra></extra>",
-            sort=False,  # Preserves category sequence so light and dark grey slices strictly alternate
+            sort=False,
         )
         fig_current_broad.update_layout(
             showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
@@ -709,7 +750,7 @@ with tab2:
         fig_doubled_broad.update_traces(
             textinfo="percent+label",
             hovertemplate="<b>%{label}</b><br>Doubled Share: %{value:.1f}%<extra></extra>",
-            sort=False,  # Preserves category sequence so light and dark grey slices strictly alternate
+            sort=False,
         )
         fig_doubled_broad.update_layout(
             showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
@@ -736,7 +777,7 @@ with tab2:
             "Income Elasticity (e)": st.column_config.NumberColumn(
                 "Income Elasticity (e)",
                 format="%.3f",
-                alignment="center",  # Center-align second column
+                alignment="center",
             ),
             "Good Type": st.column_config.Column("Good Type", alignment="left"),
         },
@@ -776,10 +817,12 @@ with tab3:
         group_pop_growth = float(wb_match.iloc[0]["pop_growth"])
         wb_income_growth = float(wb_match.iloc[0]["income_growth"])
         group_pop_year = str(wb_match.iloc[0].get("pop_year", "Recent"))
+        income_cat = str(wb_match.iloc[0].get("income_group", "Unclassified"))
     else:
         group_pop_growth = 1.20
         wb_income_growth = 2.50
         group_pop_year = "Recent"
+        income_cat = "Unclassified"
 
     with ctrl_col2:
         st.metric(
@@ -804,7 +847,7 @@ with tab3:
         FOOD_GROUP_MAP
     )
 
-    # Calculate growth and round to 2 decimal places (hundredth place)
+    # Calculate growth and round to 2 decimal places
     country_ifpri_df["annual_demand_growth"] = (
         group_pop_growth + (country_ifpri_df["income_elasticity"] * group_income_growth)
     ).round(2)
@@ -824,7 +867,7 @@ with tab3:
         y="food_group_name",
         orientation="h",
         text="display_growth",
-        title=f"Projected Annual Demand Growth (%) by Category in {selected_country_ifpri}",
+        title=f"Projected Annual Demand Growth (%) by Category in {selected_country_ifpri} ({income_cat})",
         labels={
             "annual_demand_growth": "Annual Demand Growth (%)",
             "food_group_name": "Food Group",
@@ -875,12 +918,7 @@ with tab3:
             "Income Elasticity": st.column_config.NumberColumn(
                 "Income Elasticity",
                 format="%.2f",
-                alignment="center",  # Center-align second column
-            ),
-            "Annual Demand Growth (%)": st.column_config.NumberColumn(
-                "Annual Demand Growth (%)",
-                format="%+.2f%%",
-                alignment="center",  # Center-align third column
+                alignment="center",
             ),
         },
         hide_index=True,
