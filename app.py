@@ -361,7 +361,7 @@ def load_ifpri_data(df_merged):
                 }
             )
 
-    # Always include World in fallback records
+    # Always include World fallback
     for fg_id, mult in group_multipliers.items():
         sub_e = round(max(0.01, 0.45 * mult), 2)
         fallback_records.append(
@@ -374,62 +374,81 @@ def load_ifpri_data(df_merged):
 
     df_fallback = pd.DataFrame(fallback_records)
 
-    try:
+    df_ifpri_raw = None
+    for filename in ["IFPRI.xlsx", "IFPRI.csv", "IFPRI_Food_Elasticities.csv", "IFPRI_Food_Elasticities.xlsx"]:
         try:
-            df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
-        except FileNotFoundError:
-            try:
-                df_ifpri_raw = pd.read_csv("IFPRI.csv")
-            except FileNotFoundError:
-                try:
-                    df_ifpri_raw = pd.read_csv("IFPRI_Food_Elasticities.csv")
-                except FileNotFoundError:
-                    df_ifpri_raw = pd.read_excel("IFPRI_Food_Elasticities.xlsx")
+            if filename.endswith(".xlsx"):
+                df_ifpri_raw = pd.read_excel(filename)
+            else:
+                df_ifpri_raw = pd.read_csv(filename)
+            break
+        except Exception:
+            continue
 
-        df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
+    if df_ifpri_raw is None or df_ifpri_raw.empty:
+        return df_fallback
 
-        if "estimate_2021" in df_ifpri_raw.columns:
-            df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
+    df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
 
-        if "specification" in df_ifpri_raw.columns:
-            df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
-            df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
+    if "estimate_2021" in df_ifpri_raw.columns and "income_elasticity" not in df_ifpri_raw.columns:
+        df_ifpri_raw = df_ifpri_raw.rename(columns={"estimate_2021": "income_elasticity"})
 
-        # Region = 0 represents World averages
-        if "region" in df_ifpri_raw.columns:
-            df_ifpri_raw["region"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
-            df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World"
+    # Filter specification == 6 specifically
+    if "specification" in df_ifpri_raw.columns:
+        df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
+        spec6_df = df_ifpri_raw[df_ifpri_raw["specification"] == 6].copy()
+        if not spec6_df.empty:
+            df_ifpri_raw = spec6_df
 
-        if "country" in df_ifpri_raw.columns:
-            df_ifpri_raw["country"] = df_ifpri_raw["country"].fillna("World")
-            df_ifpri_raw.loc[
-                df_ifpri_raw["country"].astype(str).str.strip().isin(["", "nan", "None", "NaN"]),
-                "country",
-            ] = "World"
-            df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
-        else:
-            df_ifpri_raw["country"] = "World"
+    df_ifpri_raw = df_ifpri_raw.copy()
 
-        if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
-            df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
-            df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
+    # Region = 0 represents World averages
+    if "region" in df_ifpri_raw.columns:
+        df_ifpri_raw["region"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
+        df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World"
 
-            merged = pd.merge(
-                df_fallback,
-                df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
-                on=["country", "food_group"],
-                how="outer",
-                suffixes=("_fallback", "_real"),
-            )
+    if "country" in df_ifpri_raw.columns:
+        df_ifpri_raw["country"] = df_ifpri_raw["country"].fillna("World")
+        df_ifpri_raw.loc[
+            df_ifpri_raw["country"].astype(str).str.strip().isin(["", "nan", "None", "NaN"]),
+            "country",
+        ] = "World"
+        df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
+    else:
+        df_ifpri_raw["country"] = "World"
 
-            merged["income_elasticity"] = merged["income_elasticity_real"].fillna(
-                merged["income_elasticity_fallback"]
-            )
+    if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
+        df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
+        df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
-            return merged[["country", "food_group", "income_elasticity"]].dropna()
+        clean_ifpri = df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]).copy()
 
-    except Exception:
-        pass
+        # DEDUPLICATION & AGGREGATION: Guarantee strictly 1 value per (country, food_group) pair
+        clean_ifpri = (
+            clean_ifpri.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
+            .mean()
+        )
+
+        merged = pd.merge(
+            df_fallback,
+            clean_ifpri,
+            on=["country", "food_group"],
+            how="outer",
+            suffixes=("_fallback", "_real"),
+        )
+
+        merged["income_elasticity"] = merged["income_elasticity_real"].fillna(
+            merged["income_elasticity_fallback"]
+        )
+
+        final_df = merged[["country", "food_group", "income_elasticity"]].dropna()
+
+        # Final safety deduplication step
+        final_df = (
+            final_df.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
+            .mean()
+        )
+        return final_df
 
     return df_fallback
 
@@ -450,14 +469,17 @@ def build_bennett_trapezoid_figure(country_df, country_name):
         9: 5.0,   # All Beverages
     }
 
-    country_df_sorted = country_df.sort_values(
-        by="income_elasticity", ascending=False
-    ).copy()
+    # Ensure strictly one row per food_group
+    country_df_unique = (
+        country_df.groupby(["food_group"], as_index=False)["income_elasticity"]
+        .mean()
+        .sort_values(by="income_elasticity", ascending=False)
+    )
 
-    available_groups = country_df_sorted["food_group"].tolist()
+    available_groups = country_df_unique["food_group"].tolist()
 
     quantities = {}
-    for _, row in country_df_sorted.iterrows():
+    for _, row in country_df_unique.iterrows():
         g_id = int(row["food_group"])
         e_y = float(row["income_elasticity"])
         base = baseline_shares.get(g_id, 8.0)
@@ -480,8 +502,8 @@ def build_bennett_trapezoid_figure(country_df, country_name):
 
     for idx, g in enumerate(available_groups):
         g_name = FOOD_GROUP_MAP.get(g, f"Group {g}")
-        e_val = country_df_sorted.loc[
-            country_df_sorted["food_group"] == g, "income_elasticity"
+        e_val = country_df_unique.loc[
+            country_df_unique["food_group"] == g, "income_elasticity"
         ].values[0]
 
         x_left = cum_x[idx]
@@ -868,6 +890,12 @@ with tab3:
     country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_ifpri].copy()
     if country_ifpri_df.empty:
         country_ifpri_df = df_ifpri[df_ifpri["country"] == "World"].copy()
+
+    # Deduplicate strictly to ensure 1 row per food group
+    country_ifpri_df = (
+        country_ifpri_df.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
+        .mean()
+    )
 
     country_ifpri_df["group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
     country_ifpri_df["total_demand_growth"] = (
