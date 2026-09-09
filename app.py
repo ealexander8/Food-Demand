@@ -54,15 +54,15 @@ BROAD_GOODS_MAP = {
 
 # Non-food categories alternate between light and dark grey
 BROAD_GOODS_COLOR_MAP = {
-    "Food": "#2E7D32",                       # Green
-    "Beverages & Tobacco": "#E0E0E0",        # Light Grey
-    "Clothing & Footwear": "#9E9E9E",        # Dark Grey
-    "Housing": "#E0E0E0",                    # Light Grey
-    "House Furnishings & Operations": "#9E9E9E", # Dark Grey
-    "Medical & Health": "#E0E0E0",          # Light Grey
-    "Transport & Communication": "#9E9E9E", # Dark Grey
-    "Recreation & Culture": "#E0E0E0",      # Light Grey
-    "Education & Other": "#9E9E9E",         # Dark Grey
+    "Food": "#2E7D32",  # Green
+    "Beverages & Tobacco": "#E0E0E0",  # Light Grey
+    "Clothing & Footwear": "#9E9E9E",  # Dark Grey
+    "Housing": "#E0E0E0",  # Light Grey
+    "House Furnishings & Operations": "#9E9E9E",  # Dark Grey
+    "Medical & Health": "#E0E0E0",  # Light Grey
+    "Transport & Communication": "#9E9E9E",  # Dark Grey
+    "Recreation & Culture": "#E0E0E0",  # Light Grey
+    "Education & Other": "#9E9E9E",  # Dark Grey
 }
 
 
@@ -689,6 +689,7 @@ with tab2:
         fig_current_broad.update_traces(
             textinfo="percent+label",
             hovertemplate="<b>%{label}</b><br>Current Share: %{value:.1f}%<extra></extra>",
+            sort=False,  # Preserves category sequence so light and dark grey slices strictly alternate
         )
         fig_current_broad.update_layout(
             showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
@@ -708,6 +709,7 @@ with tab2:
         fig_doubled_broad.update_traces(
             textinfo="percent+label",
             hovertemplate="<b>%{label}</b><br>Doubled Share: %{value:.1f}%<extra></extra>",
+            sort=False,  # Preserves category sequence so light and dark grey slices strictly alternate
         )
         fig_doubled_broad.update_layout(
             showlegend=False, height=500, margin=dict(l=20, r=20, t=30, b=20)
@@ -727,31 +729,19 @@ with tab2:
         }
     )
 
-    st.markdown(
-        """
-        <style>
-        [data-testid="stDataFrame"] [role="columnheader"],
-        [data-testid="stDataFrame"] [role="columnheader"] *,
-        [data-testid="stDataFrame"] th,
-        [data-testid="stDataFrame"] td,
-        [data-testid="stDataFrame"] th > div,
-        [data-testid="stDataFrame"] td > div {
-            justify-content: center !important;
-            text-align: center !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.dataframe(
-        summary_broad_df.style.set_properties(**{"text-align": "center"}).format(
-            {
-                "Income Elasticity (e)": "{:.3f}",
-            }
-        ),
+        summary_broad_df,
+        column_config={
+            "Expenditure Type": st.column_config.Column("Expenditure Type", alignment="left"),
+            "Income Elasticity (e)": st.column_config.NumberColumn(
+                "Income Elasticity (e)",
+                format="%.3f",
+                alignment="center",  # Center-align second column
+            ),
+            "Good Type": st.column_config.Column("Good Type", alignment="left"),
+        },
         hide_index=True,
-        use_container_width=False,
+        use_container_width=True,
     )
 
 
@@ -814,20 +804,26 @@ with tab3:
         FOOD_GROUP_MAP
     )
 
-    country_ifpri_df["annual_demand_growth"] = group_pop_growth + (
-        country_ifpri_df["income_elasticity"] * group_income_growth
-    )
+    # Calculate growth and round to 2 decimal places (hundredth place)
+    country_ifpri_df["annual_demand_growth"] = (
+        group_pop_growth + (country_ifpri_df["income_elasticity"] * group_income_growth)
+    ).round(2)
 
     country_ifpri_df_sorted = country_ifpri_df.sort_values(
         by="annual_demand_growth", ascending=True
-    )
+    ).copy()
+
+    # Formatted display labels rounded to the hundredths place
+    country_ifpri_df_sorted["display_growth"] = country_ifpri_df_sorted[
+        "annual_demand_growth"
+    ].apply(lambda x: f"{x:+.2f}%")
 
     fig_bar = px.bar(
         country_ifpri_df_sorted,
         x="annual_demand_growth",
         y="food_group_name",
         orientation="h",
-        text="annual_demand_growth",
+        text="display_growth",
         title=f"Projected Annual Demand Growth (%) by Category in {selected_country_ifpri}",
         labels={
             "annual_demand_growth": "Annual Demand Growth (%)",
@@ -837,7 +833,7 @@ with tab3:
         color_discrete_map=FOOD_NAME_COLOR_MAP,
     )
 
-    fig_bar.update_traces(texttemplate="%{text:+.2f}%", textposition="outside")
+    fig_bar.update_traces(textposition="outside")
     fig_bar.add_vline(x=0, line_dash="dash", line_color="black", opacity=0.7)
 
     fig_bar.update_layout(
@@ -862,43 +858,31 @@ with tab3:
     st.markdown("---")
     st.subheader("Income Elasticities")
 
-    st.markdown(
-        """
-        <style>
-        [data-testid="stDataFrame"] [role="columnheader"],
-        [data-testid="stDataFrame"] [role="columnheader"] *,
-        [data-testid="stDataFrame"] th,
-        [data-testid="stDataFrame"] td,
-        [data-testid="stDataFrame"] th > div,
-        [data-testid="stDataFrame"] td > div {
-            justify-content: center !important;
-            text-align: center !important;
+    summary_ifpri_df = country_ifpri_df[
+        ["food_group_name", "income_elasticity", "annual_demand_growth"]
+    ].rename(
+        columns={
+            "food_group_name": "Food Group",
+            "income_elasticity": "Income Elasticity",
+            "annual_demand_growth": "Annual Demand Growth (%)",
         }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    display_df = (
-        country_ifpri_df.sort_values("income_elasticity", ascending=False)[
-            ["food_group_name", "income_elasticity", "annual_demand_growth"]
-        ]
-        .rename(
-            columns={
-                "food_group_name": "Food Category",
-                "income_elasticity": "Income Elasticity (Subgroup)",
-                "annual_demand_growth": "Total Growth (%)",
-            }
-        )
     )
 
     st.dataframe(
-        display_df.style.set_properties(**{"text-align": "center"}).format(
-            {
-                "Income Elasticity (Subgroup)": "{:.2f}",
-                "Total Growth (%)": "{:+.2f}%",
-            }
-        ),
+        summary_ifpri_df,
+        column_config={
+            "Food Group": st.column_config.Column("Food Group", alignment="left"),
+            "Income Elasticity": st.column_config.NumberColumn(
+                "Income Elasticity",
+                format="%.2f",
+                alignment="center",  # Center-align second column
+            ),
+            "Annual Demand Growth (%)": st.column_config.NumberColumn(
+                "Annual Demand Growth (%)",
+                format="%+.2f%%",
+                alignment="center",  # Center-align third column
+            ),
+        },
         hide_index=True,
-        use_container_width=False,
+        use_container_width=True,
     )
