@@ -53,15 +53,15 @@ BROAD_GOODS_MAP = {
 }
 
 BROAD_GOODS_COLOR_MAP = {
-    "Food": "#2E7D32",                      
-    "Beverages & Tobacco": "#8D6E63",       
+    "Food": "#2E7D32",                       
+    "Beverages & Tobacco": "#8D6E63",        
     "Clothing & Footwear": "#E64A19",        
     "Housing": "#1976D2",                    
     "House Furnishings & Operations": "#009688", 
-    "Medical & Health": "#D32F2F",          
+    "Medical & Health": "#D32F2F",           
     "Transport & Communication": "#7B1FA2", 
-    "Recreation & Culture": "#FBC02D",      
-    "Education & Other": "#455A64",         
+    "Recreation & Culture": "#FBC02D",       
+    "Education & Other": "#455A64",          
 }
 
 
@@ -218,7 +218,6 @@ def load_ifpri_data(df_merged):
     df_fallback = pd.DataFrame(fallback_records)
 
     try:
-        # Load directly from the new file
         df_ifpri_raw = pd.read_excel("IFPRI.xlsx")
 
         df_ifpri_raw.columns = [str(c).strip().lower() for c in df_ifpri_raw.columns]
@@ -229,16 +228,12 @@ def load_ifpri_data(df_merged):
         if "specification" in df_ifpri_raw.columns:
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
-        # Explicitly label Region 0 as "World Average"
         if "region" in df_ifpri_raw.columns:
             df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World Average"
 
         if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
-            
-            # Ensure "World Average" retains its proper casing after the .title() cast
             df_ifpri_raw["country"] = df_ifpri_raw["country"].replace({"World Average": "World Average"})
-            
             df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
             df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
@@ -246,7 +241,7 @@ def load_ifpri_data(df_merged):
                 df_fallback,
                 df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
                 on=["country", "food_group"],
-                how="outer", # Changed to outer so World Average isn't dropped if not in fallback
+                how="outer",
                 suffixes=("_fallback", "_real")
             )
             merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
@@ -372,26 +367,176 @@ with tab1:
 # TAB 2: ENGEL'S LAW (9 BROAD EXPENDITURE TYPES)
 # ==========================================
 with tab2:
-    st.header("Income Elasticity across 9 Consumption Good Types (Engel's Law)")
+    st.header("Income Elasticity across 9 Expenditure Types (Engel's Law)")
+    st.markdown(
+        "Engel's Law dictates that as households and nations get richer, the proportion of income spent on food declines, "
+        "while spending shifts toward luxury goods, health, recreation, and services."
+    )
+
     countries_tab2 = sorted(df_broad_goods["country"].unique())
     default_tab2_idx = countries_tab2.index("United States") if "United States" in countries_tab2 else 0
 
-    selected_country_tab2 = st.selectbox("Select Country / Region:", countries_tab2, index=default_tab2_idx, key="country_tab2_broad")
+    col_ctrl1, col_ctrl2 = st.columns([2, 2])
+    with col_ctrl1:
+        selected_country_tab2 = st.selectbox(
+            "Select Country / Region:",
+            countries_tab2,
+            index=default_tab2_idx,
+            key="country_tab2_broad"
+        )
+    with col_ctrl2:
+        income_sim_pct = st.slider(
+            "Simulated Income Increase (%):",
+            min_value=10,
+            max_value=300,
+            value=100,
+            step=10,
+            help="Simulate how household budget shares shift as per capita income grows by this percentage."
+        )
 
+    # Filter data for selected country
     country_broad_df = df_broad_goods[df_broad_goods["country"] == selected_country_tab2].copy()
-    country_broad_df["doubled_expenditure"] = country_broad_df["base_budget_share"] * (1.0 + country_broad_df["income_elasticity"])
-    country_broad_df["doubled_budget_share"] = (country_broad_df["doubled_expenditure"] / country_broad_df["doubled_expenditure"].sum()) * 100.0
 
-    def classify_good(e): return "Inferior Good" if e < 0 else ("Luxury Good" if e > 1 else "Normal Good")
-    country_broad_df["good_classification"] = country_broad_df["income_elasticity"].apply(classify_good)
+    # Calculate budget share reallocation under simulated income growth
+    country_broad_df["new_expenditure_index"] = country_broad_df["base_budget_share"] * (
+        1.0 + (country_broad_df["income_elasticity"] * (income_sim_pct / 100.0))
+    )
+    total_new_expenditure = country_broad_df["new_expenditure_index"].sum()
+    country_broad_df["simulated_budget_share"] = (
+        country_broad_df["new_expenditure_index"] / total_new_expenditure
+    ) * 100.0
+    country_broad_df["share_change_pts"] = (
+        country_broad_df["simulated_budget_share"] - country_broad_df["base_budget_share"]
+    )
 
+    # Classify goods strictly according to economic theory
+    def classify_good(e):
+        if e < 0:
+            return "Inferior Good (e < 0)"
+        elif e < 1:
+            return "Normal Necessity (0 < e < 1)"
+        else:
+            return "Luxury Good (e > 1)"
+
+    country_broad_df["classification"] = country_broad_df["income_elasticity"].apply(classify_good)
+
+    # Key Metrics Overview
     food_row = country_broad_df[country_broad_df["good_type"] == "Food"].iloc[0]
     
     st.markdown("---")
-    m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Food Income Elasticity", f"{food_row['income_elasticity']:.3f}")
-    m_col2.metric("Current Food Budget Share", f"{food_row['base_budget_share']:.1f}%")
-    m_col3.metric("Food Share if Income Doubles (+100%)", f"{food_row['doubled_budget_share']:.1f}%", delta=f"-{food_row['base_budget_share'] - food_row['doubled_budget_share']:.1f}% points")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Food Income Elasticity", f"{food_row['income_elasticity']:.3f}")
+    m2.metric("Current Food Share", f"{food_row['base_budget_share']:.1f}%")
+    m3.metric(
+        f"Simulated Food Share (+{income_sim_pct}%)",
+        f"{food_row['simulated_budget_share']:.1f}%"
+    )
+    m4.metric(
+        "Budget Share Shift",
+        f"{food_row['share_change_pts']:+.1f}% pts",
+        delta_color="inverse"
+    )
+
+    st.markdown("---")
+
+    # ---------------------------------------------------------
+    # CHART 1: Current vs. Simulated Budget Share Comparison
+    # ---------------------------------------------------------
+    st.subheader("1. Household Budget Share Shift across 9 Categories")
+    
+    fig_shares = go.Figure()
+    fig_shares.add_trace(go.Bar(
+        x=country_broad_df["good_type"],
+        y=country_broad_df["base_budget_share"],
+        name="Current Budget Share (%)",
+        marker_color="#455A64",
+        text=country_broad_df["base_budget_share"].apply(lambda x: f"{x:.1f}%"),
+        textposition="outside"
+    ))
+    fig_shares.add_trace(go.Bar(
+        x=country_broad_df["good_type"],
+        y=country_broad_df["simulated_budget_share"],
+        name=f"Simulated Share (+{income_sim_pct}% Income)",
+        marker_color="#1976D2",
+        text=country_broad_df["simulated_budget_share"].apply(lambda x: f"{x:.1f}%"),
+        textposition="outside"
+    ))
+
+    fig_shares.update_layout(
+        barmode="group",
+        height=420,
+        xaxis_title="<b>Expenditure Category</b>",
+        yaxis_title="<b>Budget Share (%)</b>",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=20, r=20, t=40, b=80),
+    )
+    st.plotly_chart(fig_shares, use_container_width=True)
+
+    # ---------------------------------------------------------
+    # CHART 2: Elasticity Spectrum & Category Classification
+    # ---------------------------------------------------------
+    st.subheader("2. Income Elasticity Hierarchy (Necessities vs. Luxuries)")
+    
+    sorted_broad = country_broad_df.sort_values("income_elasticity", ascending=True)
+    
+    color_map_class = {
+        "Inferior Good (e < 0)": "#D32F2F",
+        "Normal Necessity (0 < e < 1)": "#388E3C",
+        "Luxury Good (e > 1)": "#0288D1",
+    }
+    bar_colors = [color_map_class.get(c, "#757575") for c in sorted_broad["classification"]]
+
+    fig_elasticity = go.Figure()
+    fig_elasticity.add_trace(go.Bar(
+        y=sorted_broad["good_type"],
+        x=sorted_broad["income_elasticity"],
+        orientation="h",
+        marker_color=bar_colors,
+        text=sorted_broad["income_elasticity"].apply(lambda x: f"{x:.3f}"),
+        textposition="outside",
+    ))
+    
+    fig_elasticity.add_vline(
+        x=1.0, line_dash="dash", line_color="#E65100",
+        annotation_text="Unit Elasticity (e = 1.0)", annotation_position="top right"
+    )
+
+    fig_elasticity.update_layout(
+        height=400,
+        xaxis_title="<b>Income Elasticity of Demand (e_y)</b>",
+        yaxis_title="<b>Expenditure Category</b>",
+        xaxis=dict(range=[0, max(sorted_broad["income_elasticity"]) * 1.15]),
+        margin=dict(l=20, r=20, t=30, b=40),
+    )
+    st.plotly_chart(fig_elasticity, use_container_width=True)
+
+    # ---------------------------------------------------------
+    # DATA TABLE: Comprehensive Category Breakdown
+    # ---------------------------------------------------------
+    st.subheader("3. Detailed Expenditure Breakdown Table")
+    
+    table_df = country_broad_df[[
+        "good_type", "income_elasticity", "classification",
+        "base_budget_share", "simulated_budget_share", "share_change_pts"
+    ]].copy()
+    
+    table_df.columns = [
+        "Category", "Income Elasticity", "Economic Classification",
+        "Current Share (%)", f"Simulated Share (+{income_sim_pct}%)", "Change (% pts)"
+    ]
+
+    st.dataframe(
+        table_df.style
+        .format({
+            "Income Elasticity": "{:.3f}",
+            "Current Share (%)": "{:.1f}%",
+            f"Simulated Share (+{income_sim_pct}%)": "{:.1f}%",
+            "Change (% pts)": "{:+.1f}% pts"
+        })
+        .set_properties(**{"text-align": "center"}),
+        hide_index=True,
+        use_container_width=True
+    )
 
 # ==========================================
 # TAB 3: BENNETT'S LAW: FOOD SUBGROUPS
