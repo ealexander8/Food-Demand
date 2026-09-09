@@ -52,16 +52,17 @@ BROAD_GOODS_MAP = {
     9: "Education & Other",
 }
 
+# Non-food categories alternate between light and dark grey
 BROAD_GOODS_COLOR_MAP = {
-    "Food": "#2E7D32",                      # Green
-    "Beverages & Tobacco": "#E0E0E0",       # Light Grey
-    "Clothing & Footwear": "#E0E0E0",        # Light Grey
+    "Food": "#2E7D32",                       # Green
+    "Beverages & Tobacco": "#E0E0E0",        # Light Grey
+    "Clothing & Footwear": "#9E9E9E",        # Dark Grey
     "Housing": "#E0E0E0",                    # Light Grey
-    "House Furnishings & Operations": "#E0E0E0", # Light Grey
+    "House Furnishings & Operations": "#9E9E9E", # Dark Grey
     "Medical & Health": "#E0E0E0",          # Light Grey
-    "Transport & Communication": "#E0E0E0", # Light Grey
-    "Recreation & Culture": "#E0E0E0",     # Light Grey
-    "Education & Other": "#E0E0E0",         # Light Grey
+    "Transport & Communication": "#9E9E9E", # Dark Grey
+    "Recreation & Culture": "#E0E0E0",      # Light Grey
+    "Education & Other": "#9E9E9E",         # Dark Grey
 }
 
 
@@ -714,7 +715,7 @@ with tab2:
         st.plotly_chart(fig_doubled_broad, use_container_width=True)
 
     st.markdown("---")
-    st.subheader(f"Table 1(2) Elasticity & Good Type Details for {selected_country_tab2}")
+    st.subheader("Income Elasticity")
 
     summary_broad_df = country_broad_df[
         ["good_type", "income_elasticity", "good_classification"]
@@ -726,14 +727,31 @@ with tab2:
         }
     )
 
+    st.markdown(
+        """
+        <style>
+        [data-testid="stDataFrame"] [role="columnheader"],
+        [data-testid="stDataFrame"] [role="columnheader"] *,
+        [data-testid="stDataFrame"] th,
+        [data-testid="stDataFrame"] td,
+        [data-testid="stDataFrame"] th > div,
+        [data-testid="stDataFrame"] td > div {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.dataframe(
-        summary_broad_df.style.format(
+        summary_broad_df.style.set_properties(**{"text-align": "center"}).format(
             {
                 "Income Elasticity (e)": "{:.3f}",
             }
         ),
         hide_index=True,
-        use_container_width=True,
+        use_container_width=False,
     )
 
 
@@ -847,18 +865,12 @@ with tab3:
     st.markdown(
         """
         <style>
-        [data-testid="stDataFrame"] [role="columnheader"] {
-            justify-content: center !important;
-            text-align: center !important;
-        }
-        [data-testid="stDataFrame"] [role="columnheader"] * {
-            justify-content: center !important;
-            text-align: center !important;
-        }
-        [data-testid="stDataFrame"] th, [data-testid="stDataFrame"] td {
-            text-align: center !important;
-        }
-        [data-testid="stDataFrame"] th > div, [data-testid="stDataFrame"] td > div {
+        [data-testid="stDataFrame"] [role="columnheader"],
+        [data-testid="stDataFrame"] [role="columnheader"] *,
+        [data-testid="stDataFrame"] th,
+        [data-testid="stDataFrame"] td,
+        [data-testid="stDataFrame"] th > div,
+        [data-testid="stDataFrame"] td > div {
             justify-content: center !important;
             text-align: center !important;
         }
@@ -880,26 +892,13 @@ with tab3:
         )
     )
 
-    def highlight_food_category(col):
-        styles = []
-        for val in col:
-            bg_color = FOOD_NAME_COLOR_MAP.get(val, "#FFFFFF")
-            text_color = (
-                "#FFFFFF"
-                if bg_color
-                in ["#2E7D32", "#C62828", "#0288D1", "#7B1FA2", "#8D6E63"]
-                else "#000000"
-            )
-            styles.append(f"background-color: {bg_color}; color: {text_color}")
-        return styles
-
     st.dataframe(
-        display_df.style.apply(highlight_food_category, subset=["Food Category"]).format(
+        display_df.style.set_properties(**{"text-align": "center"}).format(
             {
                 "Income Elasticity (Subgroup)": "{:.2f}",
                 "Total Growth (%)": "{:+.2f}%",
             }
         ),
         hide_index=True,
-        use_container_width=True,
+        use_container_width=False,
     )
