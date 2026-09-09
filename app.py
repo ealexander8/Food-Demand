@@ -402,7 +402,7 @@ def load_ifpri_data(df_merged):
 
     df_ifpri_raw = df_ifpri_raw.copy()
 
-    # Region = 0 represents World averages
+    # Region = 0 represents World averages in IFPRI data
     if "region" in df_ifpri_raw.columns:
         df_ifpri_raw["region"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
         df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World"
@@ -807,155 +807,74 @@ with tab2:
         st.plotly_chart(fig_doubled_broad, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Income Elasticity")
+    st.subheader("Income Elasticity Summary Table")
 
     summary_broad_df = country_broad_df[
-        ["good_type", "income_elasticity", "good_classification"]
+        ["good_type", "income_elasticity", "base_budget_share", "doubled_budget_share", "good_classification"]
     ].rename(
         columns={
-            "good_type": "Expenditure Type",
-            "income_elasticity": "Income Elasticity (e)",
-            "good_classification": "Good Type",
+            "good_type": "Category",
+            "income_elasticity": "Income Elasticity",
+            "base_budget_share": "Current Share (%)",
+            "doubled_budget_share": "Doubled Income Share (%)",
+            "good_classification": "Classification",
         }
     )
 
-    st.dataframe(
-        summary_broad_df,
-        column_config={
-            "Expenditure Type": st.column_config.Column("Expenditure Type", alignment="left"),
-            "Income Elasticity (e)": st.column_config.NumberColumn(
-                "Income Elasticity (e)",
-                format="%.3f",
-                alignment="center",
-            ),
-            "Good Type": st.column_config.Column("Good Type", alignment="left"),
-        },
-        hide_index=True,
-        use_container_width=True,
-    )
+    st.dataframe(summary_broad_df, hide_index=True, use_container_width=True)
 
 
 # ==========================================
-# TAB 3: BENNETT'S LAW: FOOD SUBGROUPS
+# TAB 3: BENNETT'S LAW (FOOD SUBGROUPS)
 # ==========================================
 with tab3:
-    st.header("Commodity-Specific Demand Growth (Bennett's Law)")
-    st.write(
-        "Explore how demand shifts across 9 distinct IFPRI food categories using updated CGIAR dataset elasticities."
+    st.header("Bennett's Law: 9 Food Subgroups")
+    st.markdown(
+        "Bennett's Law states that as income grows, the starchy staple ratio decreases while consumption of higher-value, nutrient-dense food groups (such as animal-sourced foods, fruits, vegetables, and food away from home) increases."
     )
 
-    countries_ifpri = sorted(df_ifpri["country"].unique())
-    default_tab3_index = (
-        countries_ifpri.index("United States")
-        if "United States" in countries_ifpri
-        else 0
-    )
+    # Extract all countries including 'World' from IFPRI data
+    countries_tab3 = sorted(df_ifpri["country"].unique().tolist())
 
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
-
-    with ctrl_col1:
-        selected_country_ifpri = st.selectbox(
-            "Select Country / Region:",
-            countries_ifpri,
-            index=default_tab3_index,
-            key="country_tab3_ifpri",
+    default_tab3_idx = (
+        countries_tab3.index("World")
+        if "World" in countries_tab3
+        else (
+            countries_tab3.index("United States")
+            if "United States" in countries_tab3
+            else 0
         )
-
-    wb_match = df_2005[df_2005["country"] == selected_country_ifpri]
-    if not wb_match.empty:
-        default_pop = float(wb_match.iloc[0]["pop_growth"])
-        default_inc = float(wb_match.iloc[0]["income_growth"])
-    else:
-        default_pop = 0.90
-        default_inc = 2.00
-
-    with ctrl_col2:
-        pop_growth_ifpri = st.number_input(
-            "Annual Population Growth Rate (%)",
-            value=default_pop,
-            step=0.1,
-            format="%.2f",
-            key="pop_ifpri",
-        )
-
-    with ctrl_col3:
-        inc_growth_ifpri = st.number_input(
-            "Annual Per Capita GDP Growth Rate (%)",
-            value=default_inc,
-            step=0.1,
-            format="%.2f",
-            key="inc_ifpri",
-        )
-
-    country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_ifpri].copy()
-    if country_ifpri_df.empty:
-        country_ifpri_df = df_ifpri[df_ifpri["country"] == "World"].copy()
-
-    # Deduplicate strictly to ensure 1 row per food group
-    country_ifpri_df = (
-        country_ifpri_df.groupby(["country", "food_group"], as_index=False)["income_elasticity"]
-        .mean()
     )
 
-    country_ifpri_df["group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
-    country_ifpri_df["total_demand_growth"] = (
-        pop_growth_ifpri + country_ifpri_df["income_elasticity"] * inc_growth_ifpri
+    selected_country_tab3 = st.selectbox(
+        "Select Country / Region:",
+        countries_tab3,
+        index=default_tab3_idx,
+        key="country_tab3_ifpri",
     )
 
-    # Trapezoid Figure
-    fig_trap = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_ifpri)
-    st.plotly_chart(fig_trap, use_container_width=True)
-
-    st.subheader(f"Commodity-Specific Projected Growth Rates for {selected_country_ifpri}")
-
-    # Bar chart using discrete FOOD_NAME_COLOR_MAP to avoid continuous colorbar
-    fig_bar = px.bar(
-        country_ifpri_df.sort_values(by="total_demand_growth", ascending=True),
-        x="total_demand_growth",
-        y="group_name",
-        orientation="h",
-        color="group_name",
-        color_discrete_map=FOOD_NAME_COLOR_MAP,
-        labels={
-            "total_demand_growth": "Annual Demand Growth Rate (%)",
-            "group_name": "Food Group",
-        },
-        text_auto=".2f",
-    )
-    fig_bar.update_layout(
-        showlegend=False,
-        coloraxis_showscale=False,
-        height=450,
-        margin=dict(l=20, r=20, t=30, b=20),
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_tab3].copy()
 
     st.markdown("---")
-    st.subheader("Food Group Elasticity & Projected Growth Breakdown")
 
-    summary_tab3 = (
-        country_ifpri_df.sort_values(by="food_group")[
-            ["group_name", "income_elasticity", "total_demand_growth"]
-        ]
-        .copy()
-    )
-    summary_tab3.columns = [
-        "Food Category",
-        "Income Elasticity (e)",
-        "Projected Demand Growth (%)",
-    ]
+    fig_bennett = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_tab3)
+    st.plotly_chart(fig_bennett, use_container_width=True)
 
-    st.dataframe(
-        summary_tab3,
-        column_config={
-            "Food Category": st.column_config.Column("Food Category", alignment="left"),
-            "Income Elasticity (e)": st.column_config.NumberColumn(
-                "Income Elasticity (e)", format="%.2f", alignment="center"
-            ),
-            "Projected Demand Growth (%)": st.column_config.NumberColumn(
-                "Projected Growth (%)", format="%.2f%%", alignment="center"
-            ),
-        },
-        hide_index=True,
-        use_container_width=False,
+    st.markdown("---")
+    st.subheader(f"Income Elasticity Breakdown for {selected_country_tab3}")
+
+    display_ifpri = country_ifpri_df.copy()
+    display_ifpri["food_group_name"] = display_ifpri["food_group"].map(FOOD_GROUP_MAP)
+    display_ifpri = display_ifpri.sort_values(by="food_group")
+
+    summary_ifpri_df = display_ifpri[
+        ["food_group", "food_group_name", "income_elasticity"]
+    ].rename(
+        columns={
+            "food_group": "Group ID",
+            "food_group_name": "Food Group Subcategory",
+            "income_elasticity": "Income Elasticity",
+        }
     )
+
+    st.dataframe(summary_ifpri_df, hide_index=True, use_container_width=True)
