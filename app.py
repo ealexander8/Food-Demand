@@ -361,6 +361,17 @@ def load_ifpri_data(df_merged):
                 }
             )
 
+    # Always include World in fallback records
+    for fg_id, mult in group_multipliers.items():
+        sub_e = round(max(0.01, 0.45 * mult), 2)
+        fallback_records.append(
+            {
+                "country": "World",
+                "food_group": fg_id,
+                "income_elasticity": sub_e,
+            }
+        )
+
     df_fallback = pd.DataFrame(fallback_records)
 
     try:
@@ -384,8 +395,22 @@ def load_ifpri_data(df_merged):
             df_ifpri_raw["specification"] = pd.to_numeric(df_ifpri_raw["specification"], errors="coerce")
             df_ifpri_raw = df_ifpri_raw[df_ifpri_raw["specification"] == 6]
 
-        if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
+        # Region = 0 represents World averages
+        if "region" in df_ifpri_raw.columns:
+            df_ifpri_raw["region"] = pd.to_numeric(df_ifpri_raw["region"], errors="coerce")
+            df_ifpri_raw.loc[df_ifpri_raw["region"] == 0, "country"] = "World"
+
+        if "country" in df_ifpri_raw.columns:
+            df_ifpri_raw["country"] = df_ifpri_raw["country"].fillna("World")
+            df_ifpri_raw.loc[
+                df_ifpri_raw["country"].astype(str).str.strip().isin(["", "nan", "None", "NaN"]),
+                "country",
+            ] = "World"
             df_ifpri_raw["country"] = df_ifpri_raw["country"].astype(str).str.strip().str.title()
+        else:
+            df_ifpri_raw["country"] = "World"
+
+        if all(col in df_ifpri_raw.columns for col in ["country", "food_group", "income_elasticity"]):
             df_ifpri_raw["food_group"] = pd.to_numeric(df_ifpri_raw["food_group"], errors="coerce")
             df_ifpri_raw["income_elasticity"] = pd.to_numeric(df_ifpri_raw["income_elasticity"], errors="coerce")
 
@@ -393,13 +418,15 @@ def load_ifpri_data(df_merged):
                 df_fallback,
                 df_ifpri_raw.dropna(subset=["country", "food_group", "income_elasticity"]),
                 on=["country", "food_group"],
-                how="left",
-                suffixes=("_fallback", "_real")
+                how="outer",
+                suffixes=("_fallback", "_real"),
             )
 
-            merged["income_elasticity"] = merged["income_elasticity_real"].fillna(merged["income_elasticity_fallback"])
+            merged["income_elasticity"] = merged["income_elasticity_real"].fillna(
+                merged["income_elasticity_fallback"]
+            )
 
-            return merged[["country", "food_group", "income_elasticity"]]
+            return merged[["country", "food_group", "income_elasticity"]].dropna()
 
     except Exception:
         pass
@@ -809,58 +836,58 @@ with tab3:
             "Select Country / Region:",
             countries_ifpri,
             index=default_tab3_index,
-            key="country_ifpri",
+            key="country_tab3_ifpri",
         )
 
     wb_match = df_2005[df_2005["country"] == selected_country_ifpri]
     if not wb_match.empty:
-        group_pop_growth = float(wb_match.iloc[0]["pop_growth"])
-        wb_income_growth = float(wb_match.iloc[0]["income_growth"])
-        group_pop_year = str(wb_match.iloc[0].get("pop_year", "Recent"))
-        income_cat = str(wb_match.iloc[0].get("income_group", "Unclassified"))
+        default_pop = float(wb_match.iloc[0]["pop_growth"])
+        default_inc = float(wb_match.iloc[0]["income_growth"])
     else:
-        group_pop_growth = 1.20
-        wb_income_growth = 2.50
-        group_pop_year = "N/A"
-        income_cat = "Unclassified"
+        default_pop = 0.90
+        default_inc = 2.00
 
     with ctrl_col2:
-        user_pop_growth = st.number_input(
-            "Population Growth Rate (%)",
-            value=group_pop_growth,
+        pop_growth_ifpri = st.number_input(
+            "Annual Population Growth Rate (%)",
+            value=default_pop,
             step=0.1,
             format="%.2f",
-            key="tab3_pop_growth",
+            key="pop_ifpri",
         )
 
     with ctrl_col3:
-        user_inc_growth = st.number_input(
-            "GDP Per Capita Growth Rate (%)",
-            value=wb_income_growth,
+        inc_growth_ifpri = st.number_input(
+            "Annual Per Capita GDP Growth Rate (%)",
+            value=default_inc,
             step=0.1,
             format="%.2f",
-            key="tab3_inc_growth",
+            key="inc_ifpri",
         )
 
     country_ifpri_df = df_ifpri[df_ifpri["country"] == selected_country_ifpri].copy()
+    if country_ifpri_df.empty:
+        country_ifpri_df = df_ifpri[df_ifpri["country"] == "World"].copy()
 
     country_ifpri_df["group_name"] = country_ifpri_df["food_group"].map(FOOD_GROUP_MAP)
-    country_ifpri_df["pop_contrib"] = user_pop_growth
-    country_ifpri_df["inc_contrib"] = country_ifpri_df["income_elasticity"] * user_inc_growth
     country_ifpri_df["total_demand_growth"] = (
-        country_ifpri_df["pop_contrib"] + country_ifpri_df["inc_contrib"]
+        pop_growth_ifpri + country_ifpri_df["income_elasticity"] * inc_growth_ifpri
     )
 
-    st.markdown("---")
-    st.subheader(f"📊 Projected Food Group Demand Growth for {selected_country_ifpri}")
+    # Trapezoid Figure
+    fig_trap = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_ifpri)
+    st.plotly_chart(fig_trap, use_container_width=True)
 
+    st.subheader(f"Commodity-Specific Projected Growth Rates for {selected_country_ifpri}")
+
+    # Bar chart using discrete FOOD_NAME_COLOR_MAP to avoid continuous colorbar
     fig_bar = px.bar(
         country_ifpri_df.sort_values(by="total_demand_growth", ascending=True),
         x="total_demand_growth",
         y="group_name",
         orientation="h",
-        color="food_group",
-        color_discrete_map=FOOD_COLOR_MAP,
+        color="group_name",
+        color_discrete_map=FOOD_NAME_COLOR_MAP,
         labels={
             "total_demand_growth": "Annual Demand Growth Rate (%)",
             "group_name": "Food Group",
@@ -869,33 +896,30 @@ with tab3:
     )
     fig_bar.update_layout(
         showlegend=False,
+        coloraxis_showscale=False,
         height=450,
         margin=dict(l=20, r=20, t=30, b=20),
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Dietary Transition Structure (Bennett's Law)")
-    fig_trapezoid = build_bennett_trapezoid_figure(country_ifpri_df, selected_country_ifpri)
-    st.plotly_chart(fig_trapezoid, use_container_width=True)
-
-    st.markdown("---")
     st.subheader("Food Group Elasticity & Projected Growth Breakdown")
 
-    summary_tab3 = country_ifpri_df[
-        ["food_group", "group_name", "income_elasticity", "total_demand_growth"]
-    ].copy()
+    summary_tab3 = (
+        country_ifpri_df.sort_values(by="food_group")[
+            ["group_name", "income_elasticity", "total_demand_growth"]
+        ]
+        .copy()
+    )
     summary_tab3.columns = [
-        "Group ID",
         "Food Category",
         "Income Elasticity (e)",
         "Projected Demand Growth (%)",
     ]
 
     st.dataframe(
-        summary_tab3.sort_values(by="Group ID"),
+        summary_tab3,
         column_config={
-            "Group ID": st.column_config.NumberColumn("ID", format="%d", alignment="center"),
             "Food Category": st.column_config.Column("Food Category", alignment="left"),
             "Income Elasticity (e)": st.column_config.NumberColumn(
                 "Income Elasticity (e)", format="%.2f", alignment="center"
@@ -905,5 +929,5 @@ with tab3:
             ),
         },
         hide_index=True,
-        use_container_width=True,
+        use_container_width=False,
     )
