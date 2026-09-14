@@ -149,114 +149,67 @@ def fetch_latest_world_bank_indicators():
     return df_combined
 
 
+USDA_ELASTICITY_FILE = "Table1 (2).xlsx"
+USDA_ELASTICITY_SHEET = "Table1"
+USDA_COUNTRY_COL = "Country"
+USDA_ELASTICITY_COL = "Food, beverages & tobacco"
+
+# Footnote / metadata rows that sit below the real data in the source sheet.
+# These get filtered out by column name, not hardcoded row numbers, so the
+# loader stays correct even if the sheet grows or shrinks.
+_USDA_FOOTNOTE_PREFIXES = ("Countries are reported", "a As the estimated", "Source:")
+
+
 @st.cache_data
 def load_usda_elasticities():
-    """Loads overall food income elasticities directly from Cleaned_Table1_Food_Elasticity.xlsx,
-    guaranteeing that baseline countries exist with income categories.
+    """Loads overall food income elasticities from USDA Table 1(2).
+
+    No synthetic fallback values are used. If the file can't be read, or a
+    given country's elasticity isn't present in it, that country simply
+    won't have a value here -- calling code is responsible for surfacing a
+    clear error instead of substituting a made-up number.
     """
-    usda_base = [
-        {"country": "United States", "income_elasticity_2005": 0.346, "income_group": "High income"},
-        {"country": "Afghanistan", "income_elasticity_2005": 0.78, "income_group": "Low income"},
-        {"country": "Albania", "income_elasticity_2005": 0.48, "income_group": "Upper middle income"},
-        {"country": "Algeria", "income_elasticity_2005": 0.45, "income_group": "Upper middle income"},
-        {"country": "Angola", "income_elasticity_2005": 0.75, "income_group": "Lower middle income"},
-        {"country": "Argentina", "income_elasticity_2005": 0.32, "income_group": "Upper middle income"},
-        {"country": "Armenia", "income_elasticity_2005": 0.46, "income_group": "Upper middle income"},
-        {"country": "Australia", "income_elasticity_2005": 0.12, "income_group": "High income"},
-        {"country": "Austria", "income_elasticity_2005": 0.11, "income_group": "High income"},
-        {"country": "Azerbaijan", "income_elasticity_2005": 0.44, "income_group": "Upper middle income"},
-        {"country": "Bangladesh", "income_elasticity_2005": 0.72, "income_group": "Lower middle income"},
-        {"country": "Belarus", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
-        {"country": "Belgium", "income_elasticity_2005": 0.11, "income_group": "High income"},
-        {"country": "Benin", "income_elasticity_2005": 0.74, "income_group": "Lower middle income"},
-        {"country": "Bolivia", "income_elasticity_2005": 0.52, "income_group": "Lower middle income"},
-        {"country": "Brazil", "income_elasticity_2005": 0.35, "income_group": "Upper middle income"},
-        {"country": "Canada", "income_elasticity_2005": 0.10, "income_group": "High income"},
-        {"country": "Chile", "income_elasticity_2005": 0.24, "income_group": "High income"},
-        {"country": "China", "income_elasticity_2005": 0.42, "income_group": "Upper middle income"},
-        {"country": "Colombia", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
-        {"country": "Egypt, Arab Rep.", "income_elasticity_2005": 0.50, "income_group": "Lower middle income"},
-        {"country": "Ethiopia", "income_elasticity_2005": 0.77, "income_group": "Low income"},
-        {"country": "France", "income_elasticity_2005": 0.11, "income_group": "High income"},
-        {"country": "Germany", "income_elasticity_2005": 0.10, "income_group": "High income"},
-        {"country": "Ghana", "income_elasticity_2005": 0.65, "income_group": "Lower middle income"},
-        {"country": "India", "income_elasticity_2005": 0.62, "income_group": "Lower middle income"},
-        {"country": "Indonesia", "income_elasticity_2005": 0.48, "income_group": "Upper middle income"},
-        {"country": "Italy", "income_elasticity_2005": 0.13, "income_group": "High income"},
-        {"country": "Japan", "income_elasticity_2005": 0.12, "income_group": "High income"},
-        {"country": "Kenya", "income_elasticity_2005": 0.68, "income_group": "Lower middle income"},
-        {"country": "Mexico", "income_elasticity_2005": 0.31, "income_group": "Upper middle income"},
-        {"country": "Nigeria", "income_elasticity_2005": 0.67, "income_group": "Lower middle income"},
-        {"country": "Pakistan", "income_elasticity_2005": 0.64, "income_group": "Lower middle income"},
-        {"country": "Peru", "income_elasticity_2005": 0.41, "income_group": "Upper middle income"},
-        {"country": "Philippines", "income_elasticity_2005": 0.49, "income_group": "Lower middle income"},
-        {"country": "Poland", "income_elasticity_2005": 0.25, "income_group": "High income"},
-        {"country": "Russian Federation", "income_elasticity_2005": 0.33, "income_group": "High income"},
-        {"country": "Saudi Arabia", "income_elasticity_2005": 0.22, "income_group": "High income"},
-        {"country": "South Africa", "income_elasticity_2005": 0.38, "income_group": "Upper middle income"},
-        {"country": "Spain", "income_elasticity_2005": 0.14, "income_group": "High income"},
-        {"country": "Tanzania", "income_elasticity_2005": 0.75, "income_group": "Lower middle income"},
-        {"country": "Thailand", "income_elasticity_2005": 0.36, "income_group": "Upper middle income"},
-        {"country": "Turkiye", "income_elasticity_2005": 0.34, "income_group": "Upper middle income"},
-        {"country": "United Kingdom", "income_elasticity_2005": 0.10, "income_group": "High income"},
-        {"country": "Viet Nam", "income_elasticity_2005": 0.58, "income_group": "Lower middle income"},
-    ]
-    df_base = pd.DataFrame(usda_base)
-    df_base["country"] = df_base["country"].astype(str).str.strip().str.title()
+    empty = pd.DataFrame(columns=["country", "income_elasticity_2005"])
 
     try:
-        df = pd.read_excel("Cleaned_Table1_Food_Elasticity.xlsx")
-
-        df.columns = [str(c).strip().lower() for c in df.columns]
-
-        country_col = next(
-            (c for c in df.columns if "country" in c or "name" in c),
-            df.columns[0],
+        df = pd.read_excel(
+            USDA_ELASTICITY_FILE, sheet_name=USDA_ELASTICITY_SHEET, header=1
         )
-        elasticity_col = next(
-            (
-                c
-                for c in df.columns
-                if "elasticity" in c or "income" in c or "ey" in c or "food" in c
-            ),
-            df.columns[1],
+    except Exception as e:
+        st.error(
+            f"⚠️ Could not load income elasticity data from '{USDA_ELASTICITY_FILE}': {e}"
         )
+        return empty
 
-        df_cleaned = df.rename(
-            columns={
-                country_col: "country",
-                elasticity_col: "income_elasticity_2005",
-            }
+    df.columns = [str(c).strip() for c in df.columns]
+
+    if USDA_COUNTRY_COL not in df.columns or USDA_ELASTICITY_COL not in df.columns:
+        st.error(
+            f"⚠️ '{USDA_ELASTICITY_FILE}' is missing an expected column "
+            f"('{USDA_COUNTRY_COL}' or '{USDA_ELASTICITY_COL}'). "
+            "Income elasticity data could not be loaded."
         )
-        df_cleaned["country"] = (
-            df_cleaned["country"].astype(str).str.strip().str.title()
-        )
-        df_cleaned["income_elasticity_2005"] = pd.to_numeric(
-            df_cleaned["income_elasticity_2005"], errors="coerce"
-        )
+        return empty
 
-        df_excel = df_cleaned[["country", "income_elasticity_2005"]].dropna()
+    df = df.rename(
+        columns={
+            USDA_COUNTRY_COL: "country",
+            USDA_ELASTICITY_COL: "income_elasticity_2005",
+        }
+    )[["country", "income_elasticity_2005"]]
 
-        merged_usda = pd.merge(
-            df_base,
-            df_excel,
-            on="country",
-            how="outer",
-            suffixes=("_base", "_excel"),
-        )
-        merged_usda["income_elasticity_2005"] = merged_usda[
-            "income_elasticity_2005_excel"
-        ].fillna(merged_usda["income_elasticity_2005_base"])
-        df_result = merged_usda[
-            ["country", "income_elasticity_2005", "income_group"]
-        ].dropna(subset=["country", "income_elasticity_2005"])
+    df["country"] = df["country"].astype(str).str.strip()
 
-        if not df_result.empty:
-            return df_result
-    except Exception:
-        pass
+    # Drop blank rows and trailing footnote/source text rows.
+    df = df[df["country"].notna() & (df["country"] != "") & (df["country"].str.lower() != "nan")]
+    df = df[~df["country"].str.startswith(_USDA_FOOTNOTE_PREFIXES)]
 
-    return df_base
+    df["income_elasticity_2005"] = pd.to_numeric(
+        df["income_elasticity_2005"], errors="coerce"
+    )
+    df["country"] = df["country"].str.title()
+
+    return df.reset_index(drop=True)
 
 
 @st.cache_data
